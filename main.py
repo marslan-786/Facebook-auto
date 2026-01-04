@@ -92,7 +92,8 @@ async def read_index(): return FileResponse('index.html')
 
 @app.get("/status")
 async def get_status():
-    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:10]
+    # Sort by modification time to see latest debug images first
+    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:15]
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
@@ -135,7 +136,9 @@ async def capture_step(page, step_name, wait_time=0):
     if not BOT_RUNNING: return
     if wait_time > 0: await asyncio.sleep(wait_time)
     timestamp = datetime.now().strftime("%H%M%S")
-    filename = f"{CAPTURE_DIR}/{timestamp}_{step_name}.jpg"
+    # Adding Random int to avoid overwrite in fast loops
+    rnd = random.randint(10,99)
+    filename = f"{CAPTURE_DIR}/{timestamp}_{step_name}_{rnd}.jpg"
     try: await page.screenshot(path=filename)
     except: pass
 
@@ -195,12 +198,11 @@ async def execute_click_strategy(page, element, strategy_id, desc):
     except: return False
 
 async def secure_step(page, finder_func, success_check, step_name):
-    # Check if already there
+    # Check if already done
     try:
         if await success_check().count() > 0: return True
     except: pass
 
-    # Execution Loop
     for logic_level in range(1, 6):
         if not BOT_RUNNING: return False
         
@@ -212,18 +214,23 @@ async def secure_step(page, finder_func, success_check, step_name):
             if await btn.count() > 0:
                 if logic_level > 1: log_msg(f"♻️ Logic {logic_level}...", level="step")
                 
+                # 🔥 CAPTURE BEFORE CLICK 🔥
+                await capture_step(page, f"Debug_{step_name}_L{logic_level}_Before", wait_time=0)
+                
                 await execute_click_strategy(page, btn.first, logic_level, step_name)
                 
-                # 🔥 HARD WAIT: 5 SECONDS AFTER CLICK 🔥
-                log_msg("⏳ Page Reloading (5s)...", level="step")
+                # 🔥 HARD WAIT 5 SECONDS 🔥
+                log_msg("⏳ Waiting 5s...", level="step")
                 await asyncio.sleep(5) 
                 
-                # Now check if success
+                # 🔥 CAPTURE AFTER WAIT (Did page change?) 🔥
+                await capture_step(page, f"Debug_{step_name}_L{logic_level}_After", wait_time=0)
+
+                # Check Success
                 if await success_check().count() > 0: 
-                    if logic_level > 1: await capture_step(page, f"{step_name}_Success", wait_time=0)
                     return True
                 else:
-                    log_msg("⚠️ Page didn't load yet...", level="step")
+                    log_msg("⚠️ Next page not loaded yet...", level="step")
             else:
                 if logic_level == 1: log_msg(f"⚠️ {step_name} missing...", level="step")
         except Exception: pass
@@ -306,10 +313,14 @@ async def run_fb_session(phone, proxy):
                     "Create_Account_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 2. ENTER NAME ---
+                # --- 2. ENTER NAME (TEXT SEARCH + KEYBOARD TYPE) ---
                 fname, lname = get_random_name()
-                log_msg(f"✍️ Name: {fname} {lname}", level="step")
                 
+                log_msg("⏳ Waiting 5s for Fields...", level="step")
+                await asyncio.sleep(5)
+                
+                # --- FIRST NAME ---
+                log_msg(f"✍️ First Name: {fname}", level="step")
                 f_target = page.get_by_text("First name", exact=False).last 
                 if await f_target.count() > 0:
                     await execute_click_strategy(page, f_target, 3, "Click_First_Name_Text")
@@ -332,7 +343,8 @@ async def run_fb_session(phone, proxy):
 
                 await capture_step(page, "02_Names_Typed", wait_time=1)
 
-                # --- NEXT (Using Secure Step with 5s Wait) ---
+                # --- NEXT ---
+                # Check for Age Input (New) OR DOB (Old) as Next Step
                 if not await secure_step(
                     page,
                     lambda: page.get_by_role("button", name="Next"),
@@ -344,23 +356,29 @@ async def run_fb_session(phone, proxy):
                 log_msg("📅 Checking Age/DOB...", level="step")
                 await asyncio.sleep(2) 
                 
-                # Try AGE Input First
+                # 🔥 CASE 1: AGE INPUT (New Style) 🔥
                 age_label = page.get_by_text("Age", exact=True).or_(page.get_by_text("How old are you", exact=False))
                 age_input = page.locator("input[name='age']").or_(page.locator("input[type='number']"))
                 
                 if await age_label.count() > 0 or await age_input.count() > 0:
                     log_msg("🎂 Found Age Input! Typing...", level="step")
+                    await capture_step(page, "Debug_Age_Input_Found", wait_time=0)
+                    
                     random_age = str(random.randint(19, 29))
+                    
                     if await age_input.count() > 0:
                         await age_input.fill(random_age)
                     else:
                         await execute_click_strategy(page, age_label.last, 3, "Click_Age_Label")
                         await page.keyboard.type(random_age)
+                    
                     await asyncio.sleep(1)
 
-                # Try DOB Picker
+                # 🔥 CASE 2: DOB PICKER (Old Style) 🔥
                 else:
                     log_msg("📅 Found DOB Picker...", level="step")
+                    await capture_step(page, "Debug_DOB_Picker_Found", wait_time=0)
+                    
                     year_picker = page.locator("span").filter(has_text="202").first
                     if await year_picker.count() > 0:
                         await execute_click_strategy(page, year_picker, 3, "Open_Year_Picker")
@@ -375,9 +393,11 @@ async def run_fb_session(phone, proxy):
                         
                         await asyncio.sleep(1)
                         set_btn = page.get_by_text("Set", exact=True).or_(page.get_by_role("button", name="Set"))
-                        if await set_btn.count() > 0: await execute_click_strategy(page, set_btn, 1, "Set_DOB")
+                        if await set_btn.count() > 0: 
+                            await execute_click_strategy(page, set_btn, 1, "Set_DOB")
+                            await capture_step(page, "Debug_DOB_Set_Clicked", wait_time=0)
 
-                # --- NEXT ---
+                # --- NEXT AFTER AGE/DOB ---
                 if not await secure_step(
                     page,
                     lambda: page.get_by_role("button", name="Next"),
