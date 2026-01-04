@@ -215,6 +215,7 @@ async def secure_step(page, finder_func, success_check, step_name):
                 await capture_step(page, f"Debug_{step_name}_L{logic_level}_Before", wait_time=0)
                 await execute_click_strategy(page, btn.first, logic_level, step_name)
                 
+                # 🔥 HARD WAIT 5 SECONDS 🔥
                 log_msg("⏳ Page Reloading (5s)...", level="step")
                 await asyncio.sleep(5) 
                 
@@ -306,18 +307,16 @@ async def run_fb_session(phone, proxy):
 
                 # --- 2. ENTER NAME ---
                 fname, lname = get_random_name()
+                log_msg(f"✍️ Name: {fname} {lname}", level="step")
                 
-                log_msg("⏳ Waiting 5s for Fields...", level="step")
-                await asyncio.sleep(5)
-                
+                # Try finding text "First name" and typing
                 f_target = page.get_by_text("First name", exact=False).last 
                 if await f_target.count() > 0:
                     await execute_click_strategy(page, f_target, 3, "Click_First_Name_Text")
                     await asyncio.sleep(0.5)
                     await page.keyboard.type(fname, delay=100) 
                 else:
-                    log_msg("❌ First name text not found", level="main")
-                    await capture_step(page, "Err_Fname_Not_Found"); await browser.close(); return "retry"
+                    log_msg("❌ First name text not found", level="main"); await browser.close(); return "retry"
 
                 await asyncio.sleep(1)
 
@@ -327,8 +326,7 @@ async def run_fb_session(phone, proxy):
                     await asyncio.sleep(0.5)
                     await page.keyboard.type(lname, delay=100) 
                 else:
-                    log_msg("❌ Surname text not found", level="main")
-                    await capture_step(page, "Err_Lname_Not_Found"); await browser.close(); return "retry"
+                    log_msg("❌ Surname text not found", level="main"); await browser.close(); return "retry"
 
                 await capture_step(page, "02_Names_Typed", wait_time=1)
 
@@ -340,63 +338,33 @@ async def run_fb_session(phone, proxy):
                     "Name_Next_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 3. AGE / DOB (Smart Check) ---
-                log_msg("📅 Checking Age/DOB...", level="step")
-                await asyncio.sleep(2) 
+                # --- 3. AGE / DOB (AUTO-FOCUS LOGIC) ---
+                log_msg("📅 DOB Step Reached...", level="step")
+                # Wait fully for page focus
+                await asyncio.sleep(5) 
                 
-                # 🔥 CASE 1: MANUAL DATE INPUT (Format: 01/04/2026) 🔥
-                # If we see a pre-filled field like "Birthday (0 years old)"
-                date_input = page.locator("input[type='tel']").or_(page.locator("input[placeholder='dd/mm/yyyy']"))
+                # Check if it's the "Age" (single input) page
+                if await page.get_by_text("Age", exact=True).count() > 0 or await page.locator("input[name='age']").count() > 0:
+                    log_msg("🎂 Typing Age directly...", level="step")
+                    await page.keyboard.type(str(random.randint(19, 29)))
                 
-                if await date_input.count() > 0:
-                    log_msg("📅 Found Manual Date Input! Clearing & Typing...", level="step")
-                    await capture_step(page, "Debug_Manual_Date_Found", wait_time=0)
+                # Check if it's DOB (Date inputs)
+                else:
+                    log_msg("⌨️ Typing DOB directly (Blind Mode)...", level="step")
                     
-                    # 1. Focus & Clear
-                    await execute_click_strategy(page, date_input.first, 3, "Click_Date_Input")
-                    await asyncio.sleep(0.5)
-                    await page.keyboard.press("Control+A") # Select All
-                    await page.keyboard.press("Backspace") # Delete
-                    
-                    # 2. Type New Date (e.g., 15/06/1995)
+                    # Generate Date (e.g. 15 06 1995)
                     d = random.randint(1, 28)
                     m = random.randint(1, 12)
                     y = random.randint(1990, 2000)
-                    formatted_date = f"{d:02d}{m:02d}{y}" # No slashes, FB usually adds them auto
                     
-                    await page.keyboard.type(formatted_date, delay=100)
-                    await asyncio.sleep(1)
-
-                # 🔥 CASE 2: AGE INPUT 🔥
-                elif await page.get_by_text("Age", exact=True).count() > 0:
-                    log_msg("🎂 Found Age Input! Typing...", level="step")
-                    age_input = page.locator("input[name='age']").or_(page.locator("input[type='number']"))
+                    # Format: DDMMYYYY
+                    full_date_str = f"{d:02d}{m:02d}{y}"
+                    log_msg(f"⌨️ Inputting: {full_date_str}", level="step")
                     
-                    if await age_input.count() > 0:
-                        await age_input.fill(str(random.randint(19, 29)))
-                    else:
-                        await execute_click_strategy(page, page.get_by_text("Age", exact=True).last, 3, "Click_Age_Label")
-                        await page.keyboard.type(str(random.randint(19, 29)))
-                    await asyncio.sleep(1)
-
-                # 🔥 CASE 3: DOB PICKER (Fallback) 🔥
-                else:
-                    log_msg("📅 Found DOB Picker...", level="step")
-                    year_picker = page.locator("span").filter(has_text="202").first
-                    if await year_picker.count() > 0:
-                        await execute_click_strategy(page, year_picker, 3, "Open_Year_Picker")
-                        await asyncio.sleep(2)
-                        
-                        old_year = page.get_by_text("199", exact=False).first 
-                        if await old_year.count() > 0:
-                            await execute_click_strategy(page, old_year, 3, "Select_199x")
-                        else:
-                            await page.mouse.wheel(0, 500)
-                            await page.touchscreen.tap(200, 600)
-                        
-                        await asyncio.sleep(1)
-                        set_btn = page.get_by_text("Set", exact=True).or_(page.get_by_role("button", name="Set"))
-                        if await set_btn.count() > 0: await execute_click_strategy(page, set_btn, 1, "Set_DOB")
+                    # Type slowly (200ms delay) to trigger auto-switch
+                    await page.keyboard.type(full_date_str, delay=200)
+                    
+                    await capture_step(page, "Debug_DOB_Typed", wait_time=1)
 
                 # --- NEXT AFTER DOB ---
                 if not await secure_step(
