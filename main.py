@@ -316,8 +316,7 @@ async def run_fb_session(phone, proxy):
                     await asyncio.sleep(0.5)
                     await page.keyboard.type(fname, delay=100) 
                 else:
-                    log_msg("❌ First name text not found", level="main")
-                    await capture_step(page, "Err_Fname_Not_Found"); await browser.close(); return "retry"
+                    log_msg("❌ First name text not found", level="main"); await browser.close(); return "retry"
 
                 await asyncio.sleep(1)
 
@@ -327,8 +326,7 @@ async def run_fb_session(phone, proxy):
                     await asyncio.sleep(0.5)
                     await page.keyboard.type(lname, delay=100) 
                 else:
-                    log_msg("❌ Surname text not found", level="main")
-                    await capture_step(page, "Err_Lname_Not_Found"); await browser.close(); return "retry"
+                    log_msg("❌ Surname text not found", level="main"); await browser.close(); return "retry"
 
                 await capture_step(page, "02_Names_Typed", wait_time=1)
 
@@ -406,9 +404,8 @@ async def run_fb_session(phone, proxy):
                         "Pwd_Next_Btn"
                     ): await browser.close(); return "retry"
 
-                # --- 7. SAVE INFO (FIXED: Explicit Target) ---
+                # --- 7. SAVE INFO ---
                 await asyncio.sleep(2)
-                # 🔥 TARGET "NOT NOW" TEXT SPECIFICALLY 🔥
                 save_choice = page.get_by_text("Not now", exact=True)
                 
                 if not await secure_step(
@@ -418,18 +415,23 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 8. TERMS ---
+                # --- 8. TERMS (FIXED: BLUE BUTTON) ---
                 log_msg("📜 Terms...", level="step")
                 await asyncio.sleep(3)
+                
+                # 🔥 TARGET ROLE='BUTTON' OR LAST 'I AGREE' 🔥
+                terms_btn = page.get_by_role("button", name="I agree").or_(page.get_by_text("I agree", exact=True).last)
+                
                 if not await secure_step(
                     page,
-                    lambda: page.get_by_text("I agree", exact=True).or_(page.get_by_role("button", name="I agree")),
+                    lambda: terms_btn,
                     lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False)),
                     "Terms_Agree_Btn"
                 ): await browser.close(); return "retry"
 
                 # --- 9. CONFIRMATION (SMS CHECK) ---
                 await asyncio.sleep(5)
+                # Ensure we are on confirmation method page
                 if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
                     sms_opt = page.get_by_text("Send code via SMS", exact=False)
                     if await sms_opt.count() > 0:
