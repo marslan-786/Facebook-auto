@@ -196,6 +196,7 @@ async def execute_click_strategy(page, element, strategy_id, desc):
     except: return False
 
 async def secure_step(page, finder_func, success_check, step_name):
+    # Check if already done
     try:
         if await success_check().count() > 0: return True
     except: pass
@@ -417,25 +418,24 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 8. TERMS (Standard Secure Step) ---
+                # --- 8. TERMS (FIXED: LAST 'I AGREE' TEXT) ---
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
                 
-                # Standard Robust Locator
-                terms_btn = lambda: page.get_by_role("button", name="I agree").or_(page.get_by_text("I agree", exact=True))
+                # 🔥 SIMPLE TEXT LOCATOR (LAST ONE) 🔥
+                # This finds ALL text saying "I agree" and picks the LAST one (which is the button).
+                terms_btn = lambda: page.get_by_text("I agree", exact=True).last
                 
                 # Success Check: Next page elements
                 next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False))
                 
-                # 🔥 EXECUTE SECURE STEP (5 Click Logics) 🔥
                 if not await secure_step(
                     page,
                     terms_btn,
                     next_page_check,
                     "Terms_Agree_Btn"
                 ):
-                    # Even if logic says failed (timeout), we still want to observe
-                    log_msg("⚠️ Standard checks timed out, forcing observation...", level="step")
+                    log_msg("⚠️ I Agree click failed, observing anyway...", level="step")
 
                 # --- 9. 1-MINUTE OBSERVATION MODE ---
                 log_msg("👀 Entering 1-Minute Watch Mode...", level="main")
