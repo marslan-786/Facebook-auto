@@ -218,30 +218,43 @@ async def execute_click_strategy(page, element, strategy_id, desc):
     except: return False
 
 async def secure_step(page, finder_func, success_check, step_name):
+    # Check if already passed (Fast Path)
     try:
         if await success_check().count() > 0: return True
     except: pass
 
+    # 🔥 TRY ALL 5 LOGICS SEQUENTIALLY 🔥
     for logic_level in range(1, 6):
         if not BOT_RUNNING: return False
+        
         log_msg(f"⏳ Finding {step_name}...", level="step")
         await asyncio.sleep(2) 
+        
         try:
             btn = finder_func()
             if await btn.count() > 0:
                 if logic_level > 1: log_msg(f"♻️ Logic {logic_level}...", level="step")
+                
                 await capture_step(page, f"Debug_{step_name}_L{logic_level}_Before", wait_time=0)
-                await execute_click_strategy(page, btn.first, logic_level, step_name)
+                await execute_click_strategy(page, btn.last, logic_level, step_name) # Using .last mostly better for stacked elements
+                
+                # 🔥 HARD WAIT 5 SECONDS 🔥
                 log_msg("⏳ Page Reloading (5s)...", level="step")
                 await asyncio.sleep(5) 
+                
                 await capture_step(page, f"Debug_{step_name}_L{logic_level}_After", wait_time=0)
-                if await success_check().count() > 0: return True
-                else: log_msg("⚠️ Next page not loaded yet...", level="step")
+
+                # Check if Success
+                if await success_check().count() > 0: 
+                    return True
+                else: 
+                    log_msg("⚠️ Next page not loaded yet...", level="step")
             else:
                 if logic_level == 1: log_msg(f"⚠️ {step_name} missing...", level="step")
         except Exception: pass
     
-    log_msg(f"❌ Failed: {step_name}", level="main")
+    # Only if ALL 5 failed
+    log_msg(f"❌ Failed: {step_name} (All 5 Logics Tried)", level="main")
     await capture_step(page, f"Stuck_{step_name}", wait_time=0)
     return False
 
@@ -439,34 +452,29 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # Terms (LAST I AGREE)
+                # --- 🔥 8. TERMS (FULL SEQUENTIAL SECURE STEP) 🔥 ---
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
+                
+                # Locator: Last "I agree" text
                 terms_btn = lambda: page.get_by_text("I agree", exact=True).last
                 
-                # Manual Click Logic for I Agree
-                clicked_successfully = False
-                for attempt in range(3):
-                    if await terms_btn().count() > 0:
-                        log_msg(f"🖱️ Clicking I Agree (Attempt {attempt+1})...", level="step")
-                        await execute_click_strategy(page, terms_btn().last, 3, "I_Agree_Final")
-                        await asyncio.sleep(2)
-                        if await terms_btn().count() == 0:
-                            log_msg("✅ Button Disappeared! Loading...", level="step")
-                            clicked_successfully = True
-                            await asyncio.sleep(10)
-                            break
-                    else:
-                        break
+                # Next Page: Confirmation Code
+                next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False))
                 
-                if not clicked_successfully:
-                    log_msg("❌ I Agree Failed.", level="main")
-                    await browser.close(); return "retry"
+                # Execute Standard Secure Step (Logic 1 -> 5)
+                if not await secure_step(
+                    page,
+                    terms_btn,
+                    next_page_check,
+                    "Terms_Agree_Btn"
+                ):
+                    log_msg("⚠️ I Agree failed all logics, forcing observation...", level="step")
 
                 # --- 9. CONFIRMATION / HUMAN CHECK ---
                 log_msg("👀 Checking Success...", level="main")
                 
-                # Check 1: SMS Option
+                # SMS Option
                 if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
                     sms_opt = page.get_by_text("Send code via SMS", exact=False)
                     if await sms_opt.count() > 0:
@@ -479,25 +487,23 @@ async def run_fb_session(phone, proxy):
                         "Send_Code_Btn"
                     )
 
-                # Check 2: Success
+                # Final Success
                 if await page.get_by_text("Enter the confirmation code", exact=False).count() > 0:
                     log_msg("✅ SUCCESS! Code Sent.", level="main")
                     await capture_step(page, "Success_Confirmation_Page", wait_time=0)
                     return "success"
                 
-                # 🔥 CHECK 3: HUMAN VERIFICATION (New Logic) 🔥
+                # Human Verification Check
                 if await page.get_by_text("Confirm you're human", exact=False).count() > 0:
                     log_msg("🤖 Human Verification Detected! Clicking Continue...", level="main")
                     await capture_step(page, "Human_Verification_Before")
-                    
                     cont_btn = page.get_by_role("button", name="Continue").or_(page.get_by_text("Continue", exact=True))
                     if await cont_btn.count() > 0:
                         await execute_click_strategy(page, cont_btn.first, 1, "Human_Continue")
-                        await asyncio.sleep(10) # Wait for result
-                        
+                        await asyncio.sleep(10) 
                         await capture_step(page, "Human_Verification_After")
-                        log_msg("⚠️ Human Check Handled. Marking as Failed for safety.", level="main")
-                        return "retry" # Treat as fail to retry later or skip
+                        log_msg("⚠️ Human Check Handled. Marking as Failed.", level="main")
+                        return "retry" 
 
                 # Watch Mode (Fallback)
                 log_msg("❓ Page Unclear. Watching...", level="main")
