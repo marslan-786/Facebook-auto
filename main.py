@@ -215,7 +215,6 @@ async def secure_step(page, finder_func, success_check, step_name):
                 await capture_step(page, f"Debug_{step_name}_L{logic_level}_Before", wait_time=0)
                 await execute_click_strategy(page, btn.first, logic_level, step_name)
                 
-                # 🔥 HARD WAIT 5 SECONDS 🔥
                 log_msg("⏳ Page Reloading (5s)...", level="step")
                 await asyncio.sleep(5) 
                 
@@ -307,16 +306,18 @@ async def run_fb_session(phone, proxy):
 
                 # --- 2. ENTER NAME ---
                 fname, lname = get_random_name()
-                log_msg(f"✍️ Name: {fname} {lname}", level="step")
                 
-                # Try finding text "First name" and typing
+                log_msg("⏳ Waiting 5s for Fields...", level="step")
+                await asyncio.sleep(5)
+                
                 f_target = page.get_by_text("First name", exact=False).last 
                 if await f_target.count() > 0:
                     await execute_click_strategy(page, f_target, 3, "Click_First_Name_Text")
                     await asyncio.sleep(0.5)
                     await page.keyboard.type(fname, delay=100) 
                 else:
-                    log_msg("❌ First name text not found", level="main"); await browser.close(); return "retry"
+                    log_msg("❌ First name text not found", level="main")
+                    await capture_step(page, "Err_Fname_Not_Found"); await browser.close(); return "retry"
 
                 await asyncio.sleep(1)
 
@@ -326,7 +327,8 @@ async def run_fb_session(phone, proxy):
                     await asyncio.sleep(0.5)
                     await page.keyboard.type(lname, delay=100) 
                 else:
-                    log_msg("❌ Surname text not found", level="main"); await browser.close(); return "retry"
+                    log_msg("❌ Surname text not found", level="main")
+                    await capture_step(page, "Err_Lname_Not_Found"); await browser.close(); return "retry"
 
                 await capture_step(page, "02_Names_Typed", wait_time=1)
 
@@ -338,32 +340,20 @@ async def run_fb_session(phone, proxy):
                     "Name_Next_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 3. AGE / DOB (AUTO-FOCUS LOGIC) ---
+                # --- 3. AGE / DOB ---
                 log_msg("📅 DOB Step Reached...", level="step")
-                # Wait fully for page focus
                 await asyncio.sleep(5) 
                 
-                # Check if it's the "Age" (single input) page
                 if await page.get_by_text("Age", exact=True).count() > 0 or await page.locator("input[name='age']").count() > 0:
                     log_msg("🎂 Typing Age directly...", level="step")
                     await page.keyboard.type(str(random.randint(19, 29)))
-                
-                # Check if it's DOB (Date inputs)
                 else:
-                    log_msg("⌨️ Typing DOB directly (Blind Mode)...", level="step")
-                    
-                    # Generate Date (e.g. 15 06 1995)
+                    log_msg("⌨️ Typing DOB directly...", level="step")
                     d = random.randint(1, 28)
                     m = random.randint(1, 12)
                     y = random.randint(1990, 2000)
-                    
-                    # Format: DDMMYYYY
                     full_date_str = f"{d:02d}{m:02d}{y}"
-                    log_msg(f"⌨️ Inputting: {full_date_str}", level="step")
-                    
-                    # Type slowly (200ms delay) to trigger auto-switch
                     await page.keyboard.type(full_date_str, delay=200)
-                    
                     await capture_step(page, "Debug_DOB_Typed", wait_time=1)
 
                 # --- NEXT AFTER DOB ---
@@ -416,15 +406,17 @@ async def run_fb_session(phone, proxy):
                         "Pwd_Next_Btn"
                     ): await browser.close(); return "retry"
 
-                # --- 7. SAVE INFO ---
+                # --- 7. SAVE INFO (FIXED: Explicit Target) ---
                 await asyncio.sleep(2)
-                save_choice = page.get_by_text("Not now").or_(page.get_by_text("Save"))
-                await secure_step(
+                # 🔥 TARGET "NOT NOW" TEXT SPECIFICALLY 🔥
+                save_choice = page.get_by_text("Not now", exact=True)
+                
+                if not await secure_step(
                     page,
                     lambda: save_choice,
                     lambda: page.get_by_text("I agree", exact=True),
                     "Save_Info_Btn"
-                )
+                ): await browser.close(); return "retry"
 
                 # --- 8. TERMS ---
                 log_msg("📜 Terms...", level="step")
