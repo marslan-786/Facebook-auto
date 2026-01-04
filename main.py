@@ -92,7 +92,7 @@ async def read_index(): return FileResponse('index.html')
 
 @app.get("/status")
 async def get_status():
-    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:15]
+    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:20]
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
@@ -253,8 +253,8 @@ async def master_loop():
         
         try:
             res = await run_fb_session(current_number, proxy_cfg)
-            if res == "success": log_msg("🎉 Verified!", level="main")
-            else: log_msg("❌ Failed.", level="main")
+            if res == "success": log_msg("🎉 Session Ended.", level="main")
+            else: log_msg("❌ Session Failed.", level="main")
         except Exception as e:
             log_msg(f"🔥 Crash: {e}", level="main")
         
@@ -262,6 +262,7 @@ async def master_loop():
 
 async def run_fb_session(phone, proxy):
     try:
+        # 🔥 COMPLETELY FRESH BROWSER FOR EVERY NUMBER 🔥
         async with async_playwright() as p:
             launch_args = {
                 "headless": True, 
@@ -269,7 +270,7 @@ async def run_fb_session(phone, proxy):
             }
             if proxy: launch_args["proxy"] = proxy 
 
-            log_msg("🚀 Launching...", level="step")
+            log_msg("🚀 Launching Fresh Browser...", level="step")
             try: browser = await p.chromium.launch(**launch_args)
             except Exception as e: log_msg(f"❌ Proxy Fail: {e}", level="main"); return "retry"
 
@@ -277,7 +278,11 @@ async def run_fb_session(phone, proxy):
             pixel_5['viewport'] = {'width': 412, 'height': 950}
             pixel_5['has_touch'] = True 
             
+            # 🔥 EXPLICITLY CLEAR CONTEXT (Double Safety) 🔥
             context = await browser.new_context(**pixel_5, locale="en-US", ignore_https_errors=True)
+            await context.clear_cookies()
+            await context.clear_permissions()
+            
             page = await context.new_page()
 
             log_msg("🌐 Opening Facebook...", level="step")
@@ -292,7 +297,7 @@ async def run_fb_session(phone, proxy):
                 # --- 0. COOKIES ---
                 cookie_btn = page.get_by_text("Allow all cookies", exact=False).or_(page.get_by_role("button", name="Allow all cookies"))
                 if await cookie_btn.count() > 0:
-                    log_msg("🍪 Allowing Cookies...", level="step")
+                    log_msg("🍪 Cookies Found...", level="step")
                     await execute_click_strategy(page, cookie_btn.first, 1, "Cookies")
                     await asyncio.sleep(3)
 
@@ -415,46 +420,41 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 8. TERMS (FIXED: BLUE BUTTON) ---
-                log_msg("📜 Terms...", level="step")
+                # --- 8. TERMS (I AGREE) + 1 MINUTE OBSERVATION ---
+                log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
                 
-                # 🔥 TARGET ROLE='BUTTON' OR LAST 'I AGREE' 🔥
                 terms_btn = page.get_by_role("button", name="I agree").or_(page.get_by_text("I agree", exact=True).last)
                 
-                if not await secure_step(
-                    page,
-                    lambda: terms_btn,
-                    lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False)),
-                    "Terms_Agree_Btn"
-                ): await browser.close(); return "retry"
-
-                # --- 9. CONFIRMATION (SMS CHECK) ---
-                await asyncio.sleep(5)
-                # Ensure we are on confirmation method page
-                if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
-                    sms_opt = page.get_by_text("Send code via SMS", exact=False)
-                    if await sms_opt.count() > 0:
-                        await execute_click_strategy(page, sms_opt, 3, "Select_SMS")
-                        await asyncio.sleep(2)
+                if await terms_btn.count() > 0:
+                    # Capture Before
+                    await capture_step(page, "Terms_Btn_Found_Before_Click")
                     
-                    if not await secure_step(
-                        page,
-                        lambda: page.get_by_role("button", name="Continue").or_(page.get_by_role("button", name="Send code")),
-                        lambda: page.get_by_text("Enter the confirmation code", exact=False).or_(page.locator("input[type='number']")),
-                        "Send_Code_Btn"
-                    ): await browser.close(); return "retry"
-
-                # --- 10. SUCCESS ---
-                code_input = page.locator("input[name='c']") 
-                success_text = page.get_by_text("Enter the confirmation code", exact=False)
+                    # CLICK I AGREE
+                    await execute_click_strategy(page, terms_btn.first, 3, "I_Agree_Clicked")
+                    
+                    # 🔥 1-MINUTE OBSERVATION MODE 🔥
+                    log_msg("👀 Entering 1-Minute Watch Mode (Capturing every 5s)...", level="main")
+                    
+                    for i in range(12): # 12 * 5 = 60 Seconds
+                        if not BOT_RUNNING: break
+                        await asyncio.sleep(5)
+                        
+                        # Capture status
+                        await capture_step(page, f"Post_Agree_Watch_{i+1}", wait_time=0)
+                        
+                        # Optional: Check if code input appeared (Just for log, don't stop)
+                        if await page.locator("input[name='c']").count() > 0:
+                            log_msg(f"✅ Code Input Visible! (Watch Step {i+1})", level="main")
+                        elif await page.get_by_text("Enter the confirmation code").count() > 0:
+                            log_msg(f"✅ Confirmation Page! (Watch Step {i+1})", level="main")
+                    
+                    log_msg("🏁 Observation Ended.", level="main")
+                    return "success" # Marked as processed
                 
-                if await code_input.count() > 0 or await success_text.count() > 0:
-                    log_msg("✅ SUCCESS! Code Sent.", level="main")
-                    await capture_step(page, "Success", wait_time=1)
-                    await browser.close(); return "success"
                 else:
-                    log_msg("❌ Failed at Final Step.", level="main")
+                    log_msg("❌ I Agree Button Not Found", level="main")
+                    await capture_step(page, "Error_Terms_Missing")
                     await browser.close(); return "retry"
 
             except Exception as e:
