@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Huawei Bot Manager</title>
+    <title>Facebook Bot Manager</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root { --bg: #0f172a; --panel: #1e293b; --accent: #3b82f6; --text: #e2e8f0; --green: #10b981; --red: #ef4444; --orange: #f59e0b; }
@@ -29,9 +29,9 @@
         .card { background: var(--panel); padding: 20px; border-radius: 10px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-size: 12px; color: #94a3b8; }
-        select, input[type="text"] { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 5px; outline: none; }
+        input[type="text"] { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 5px; outline: none; }
         
-        .upload-box { border: 2px dashed #334155; padding: 12px; text-align: center; border-radius: 5px; cursor: pointer; transition: 0.2s; background: #0f172a; position: relative; overflow: hidden; font-size: 13px; color: #cbd5e1; }
+        .upload-box { border: 2px dashed #334155; padding: 15px; text-align: center; border-radius: 5px; cursor: pointer; transition: 0.2s; background: #0f172a; position: relative; overflow: hidden; font-size: 13px; color: #cbd5e1; }
         .upload-box:hover { border-color: var(--accent); background: #1e3a8a; }
         
         /* --- BUTTONS ROW (INLINE) --- */
@@ -39,7 +39,7 @@
         .btn-control { flex: 1; padding: 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
         .start { background: var(--green); color: white; }
         .stop { background: var(--red); color: white; }
-        .clear-data { background: var(--orange); color: white; flex: 0.5; } /* Smaller Clear Button */
+        .clear-data { background: var(--orange); color: white; flex: 0.5; } 
         .btn-control:hover { opacity: 0.9; }
 
         /* TERMINAL */
@@ -52,10 +52,13 @@
 
         /* MODALS */
         .modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); align-items: center; justify-content: center; z-index: 1000; }
-        .modal-content { background: var(--panel); padding: 20px; width: 90%; max-width: 500px; border-radius: 10px; max-height: 80vh; overflow-y: auto; }
+        .modal-content { background: var(--panel); padding: 20px; width: 90%; max-width: 600px; border-radius: 10px; max-height: 85vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; align-items: center; }
-        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
-        .gallery-grid img { width: 100%; border-radius: 5px; border: 1px solid #444; cursor: pointer; transition: 0.2s; }
+        
+        /* GALLERY GRID - IMPROVED FOR ALL IMAGES */
+        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+        .gallery-grid img { width: 100%; border-radius: 5px; border: 1px solid #444; cursor: pointer; transition: 0.2s; aspect-ratio: 9/16; object-fit: cover; }
+        .gallery-grid img:hover { transform: scale(1.05); border-color: var(--accent); }
         
         .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
         .btn-save { background: var(--green); flex: 1; border:none; padding: 10px; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; }
@@ -98,7 +101,7 @@
                 <div id="proxyHelp" class="help-box">
                     <strong>✅ Supported Formats:</strong>
                     <ul>
-                        <li><code>ip:port:user:pass</code> (4 parts)</li>
+                        <li><code>ip:port:user:pass</code> (Recommended)</li>
                         <li><code>user:pass@ip:port</code></li>
                         <li><code>http://user:pass@ip:port</code></li>
                     </ul>
@@ -113,9 +116,9 @@
     </div>
 
     <div id="galleryModal" class="modal">
-        <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-content" style="max-width: 900px;">
             <div class="modal-header">
-                <h3>📸 Critical Events</h3>
+                <h3>📸 Live Debug Gallery (All Steps)</h3>
                 <button class="icon-btn" onclick="toggleModal('galleryModal')"><i class="fas fa-times"></i></button>
             </div>
             <div class="gallery-grid" id="galleryGrid"></div>
@@ -124,7 +127,7 @@
 
     <div class="header">
         <button class="icon-btn" onclick="openGallery()"><i class="fas fa-images"></i></button>
-        <h2>HUAWEI BOT</h2>
+        <h2>FACEBOOK BOT</h2>
         <button class="icon-btn" onclick="toggleModal('settingsModal')"><i class="fas fa-cog"></i></button>
     </div>
 
@@ -146,12 +149,6 @@
         </div>
 
         <div class="card">
-            <div class="form-group">
-                <label>Target Country</label>
-                <select id="countrySelect" onchange="saveSettings()">
-                    <option value="Russia">Russia</option>
-                </select>
-            </div>
             <div class="form-group" style="margin-bottom:0;">
                 <div class="upload-box" onclick="document.getElementById('numFile').click()">
                     <span id="numFileName">📂 Upload Numbers.txt</span>
@@ -172,10 +169,8 @@
     </div>
 
     <script>
-        const countries = ["Afghanistan","Albania","Algeria","Andorra","Angola","Argentina","Armenia","Australia","Austria","Azerbaijan","Bahrain","Bangladesh","Belarus","Belgium","Belize","Benin","Bhutan","Bolivia","Bosnia","Botswana","Brazil","Brunei","Bulgaria","Burkina Faso","Burundi","Cambodia","Cameroon","Canada","Chad","Chile","China","Colombia","Comoros","Congo","Costa Rica","Croatia","Cuba","Cyprus","Czech Republic","Denmark","Djibouti","Dominica","Ecuador","Egypt","Estonia","Ethiopia","Fiji","Finland","France","Gabon","Gambia","Georgia","Germany","Ghana","Greece","Guatemala","Guinea","Haiti","Honduras","Hong Kong","Hungary","Iceland","India","Indonesia","Iran","Iraq","Ireland","Israel","Italy","Jamaica","Japan","Jordan","Kazakhstan","Kenya","Kuwait","Kyrgyzstan","Laos","Latvia","Lebanon","Lesotho","Liberia","Libya","Liechtenstein","Lithuania","Luxembourg","Macau","Madagascar","Malawi","Malaysia","Maldives","Mali","Malta","Mauritania","Mauritius","Mexico","Moldova","Monaco","Mongolia","Montenegro","Morocco","Mozambique","Myanmar","Namibia","Nepal","Netherlands","New Zealand","Nicaragua","Niger","Nigeria","North Korea","Norway","Oman","Pakistan","Palestine","Panama","Papua New Guinea","Paraguay","Peru","Philippines","Poland","Portugal","Qatar","Romania","Russia","Rwanda","Saudi Arabia","Senegal","Serbia","Singapore","Slovakia","Slovenia","Somalia","South Africa","South Korea","Spain","Sri Lanka","Sudan","Sweden","Switzerland","Syria","Taiwan","Tajikistan","Tanzania","Thailand","Timor-Leste","Togo","Tunisia","Turkey","Turkmenistan","Uganda","Ukraine","UAE","United Kingdom","United States","Uruguay","Uzbekistan","Venezuela","Vietnam","Yemen","Zambia","Zimbabwe"];
-
         // --- LOCAL STORAGE MANAGER ---
-        const CACHE_KEY_PREFIX = "huawei_bot_v2_";
+        const CACHE_KEY_PREFIX = "fb_bot_v1_";
         
         let totalNums = parseInt(localStorage.getItem(CACHE_KEY_PREFIX + 'total')) || 0;
         let successCount = parseInt(localStorage.getItem(CACHE_KEY_PREFIX + 'success')) || 0;
@@ -183,20 +178,11 @@
         let userScrolledUp = false;
 
         window.onload = function() {
-            const sel = document.getElementById('countrySelect');
-            countries.forEach(c => {
-                let opt = document.createElement('option');
-                opt.value = c; opt.innerText = c;
-                sel.appendChild(opt);
-            });
-
-            // 1. RESTORE SETTINGS (Global/Persistent)
-            const savedC = localStorage.getItem('lastCountry');
-            if(savedC) sel.value = savedC;
+            // Restore Settings
             const savedP = localStorage.getItem('manualProxy');
             if(savedP) document.getElementById('manualProxy').value = savedP;
 
-            // 2. RESTORE SESSION DATA (Per Device Cache)
+            // Restore Session
             restoreSession();
 
             const term = document.getElementById('terminal');
@@ -210,19 +196,16 @@
         };
 
         function restoreSession() {
-            // Restore Counts
             document.getElementById('countTotal').innerText = totalNums;
             document.getElementById('countSuccess').innerText = successCount;
             document.getElementById('countFailed').innerText = failCount;
 
-            // Restore Logs (Last 100 lines kept in storage)
             const savedLogs = localStorage.getItem(CACHE_KEY_PREFIX + 'logs');
             if(savedLogs) {
                 document.getElementById('terminal').innerHTML = savedLogs;
                 document.getElementById('terminal').scrollTop = document.getElementById('terminal').scrollHeight;
             }
 
-            // Restore File Name UI
             const savedNumFile = localStorage.getItem(CACHE_KEY_PREFIX + 'numFileName');
             if(savedNumFile) document.getElementById('numFileName').innerText = "✅ " + savedNumFile;
         }
@@ -231,31 +214,26 @@
             localStorage.setItem(CACHE_KEY_PREFIX + 'total', totalNums);
             localStorage.setItem(CACHE_KEY_PREFIX + 'success', successCount);
             localStorage.setItem(CACHE_KEY_PREFIX + 'failed', failCount);
-            // Save current terminal HTML state
             localStorage.setItem(CACHE_KEY_PREFIX + 'logs', document.getElementById('terminal').innerHTML);
         }
 
         function clearLocalData() {
-            if(!confirm("Clear logs and stats? (Proxy settings will remain)")) return;
+            if(!confirm("Clear logs and stats? (Proxy will remain)")) return;
             
-            // Reset Vars
             totalNums = 0; successCount = 0; failCount = 0;
             
-            // Clear specific keys (NOT Proxy settings)
             localStorage.removeItem(CACHE_KEY_PREFIX + 'total');
             localStorage.removeItem(CACHE_KEY_PREFIX + 'success');
             localStorage.removeItem(CACHE_KEY_PREFIX + 'failed');
             localStorage.removeItem(CACHE_KEY_PREFIX + 'logs');
             localStorage.removeItem(CACHE_KEY_PREFIX + 'numFileName');
 
-            // Reset UI
             document.getElementById('countTotal').innerText = 0;
             document.getElementById('countSuccess').innerText = 0;
             document.getElementById('countFailed').innerText = 0;
             document.getElementById('terminal').innerHTML = "<div>> Data Cleared. Ready.</div>";
             document.getElementById('numFileName').innerText = "📂 Upload Numbers.txt";
             
-            // Stop backend if running (optional logic, but safe)
             if(isRunning) toggleBot();
         }
 
@@ -299,7 +277,6 @@
                 const text = await file.text();
                 totalNums = text.split('\n').filter(l => l.trim()).length;
                 document.getElementById('countTotal').innerText = totalNums;
-                // Save loaded state
                 localStorage.setItem(CACHE_KEY_PREFIX + 'total', totalNums);
                 localStorage.setItem(CACHE_KEY_PREFIX + 'numFileName', file.name);
             }
@@ -311,12 +288,11 @@
         }
 
         async function saveSettings() {
-            const country = document.getElementById('countrySelect').value;
+            // Country is removed, sending empty or default string
             const proxy = document.getElementById('manualProxy').value;
-            localStorage.setItem('lastCountry', country);
             localStorage.setItem('manualProxy', proxy);
             const formData = new FormData();
-            formData.append('country', country);
+            formData.append('country', "Default"); // Not used by bot anymore
             formData.append('manual_proxy', proxy);
             await fetch('/update_settings', { method: 'POST', body: formData });
             document.getElementById('settingsModal').style.display = 'none';
@@ -349,16 +325,13 @@
                 const data = await res.json();
                 
                 const term = document.getElementById('terminal');
-                // Only append NEW logs to avoid UI flicker, simplified here by replace logic
-                // But to support cache, we save to LS
                 const chronoLogs = [...data.logs].reverse(); 
                 const newHTML = chronoLogs.map(l => `<div>${l}</div>`).join('');
                 
-                // Update terminal only if changed to prevent jump
                 if(term.innerHTML !== newHTML && newHTML.length > 10) {
                     term.innerHTML = newHTML;
                     if (!userScrolledUp) term.scrollTop = term.scrollHeight; 
-                    saveSessionState(); // Auto-save Logs to Cache
+                    saveSessionState();
                 }
 
                 const btn = document.getElementById('mainBtn');
@@ -368,41 +341,25 @@
                     btn.classList.remove('start'); btn.classList.add('stop');
                 }
 
-                // Stats Parsing
                 const logsStr = data.logs.join('\n');
-                // Calculate incremental changes based on logs (since backend sends last 50)
-                // In a real persistent app, backend sends 'total_success', but here we parse logs
-                // We trust LocalStorage primarily, and add new ones found in logs
                 const succ = (logsStr.match(/Verified/g) || []).length;
                 const fail = (logsStr.match(/Failed/g) || []).length;
                 
-                // Simple logic: if backend log shows more than we have, sync up. 
-                // (Limitation: if logs clear on backend, this might de-sync, but works for this scope)
                 if(succ > 0 || fail > 0) {
-                     // Since we rely on local storage for history, we don't overwrite with just the last 50 logs stats
-                     // We would ideally increment. For now, let's just stick to the simple parser provided earlier
-                     // or assume the user clears data when starting fresh.
-                     // To keep it simple per request:
                      if(succ > successCount) successCount = succ;
                      if(fail > failCount) failCount = fail;
-                     
                      document.getElementById('countSuccess').innerText = successCount;
                      document.getElementById('countFailed').innerText = failCount;
-                     saveSessionState(); // Save counts
+                     saveSessionState(); 
                 }
 
                 if(document.getElementById('galleryModal').style.display === 'flex') {
                     const grid = document.getElementById('galleryGrid');
-                    const filteredImages = data.images.filter(url => 
-                        url.includes("Success_") || 
-                        url.includes("Stuck_") || 
-                        url.includes("Error_")
-                    );
-                    
-                    if (filteredImages.length === 0) {
-                        grid.innerHTML = "<p style='color:#888; text-align:center;'>No critical events captured yet.</p>";
+                    // 🔥 SHOW ALL IMAGES (NO FILTER) 🔥
+                    if (data.images.length === 0) {
+                        grid.innerHTML = "<p style='color:#888; text-align:center;'>No images yet.</p>";
                     } else {
-                        grid.innerHTML = filteredImages.map(url => 
+                        grid.innerHTML = data.images.map(url => 
                             `<img src="${url}" onclick="window.open('${url}', '_blank')" title="${url.split('/').pop()}">`
                         ).join('');
                     }
