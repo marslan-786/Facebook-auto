@@ -52,15 +52,13 @@ def log_msg(message, level="step"):
     logs.insert(0, entry)
     if len(logs) > 500: logs.pop()
 
-# --- PROXY MANAGER (DIRECT SUPPORT ADDED) ---
+# --- PROXY MANAGER ---
 def parse_proxy_string(proxy_str):
     if not proxy_str or len(proxy_str) < 5: return None
     p = proxy_str.strip()
-    # IP:PORT:USER:PASS
     if p.count(":") == 3 and "://" not in p:
         parts = p.split(":")
         return {"server": f"http://{parts[0]}:{parts[1]}", "username": parts[2], "password": parts[3]}
-    # STANDARD URL
     if "://" not in p: p = f"http://{p}"
     try:
         parsed = urlparse(p)
@@ -71,19 +69,14 @@ def parse_proxy_string(proxy_str):
     except: return None
 
 def get_current_proxy():
-    # 1. Manual Settings
     if SETTINGS["proxy_manual"] and len(SETTINGS["proxy_manual"]) > 5:
         return parse_proxy_string(SETTINGS["proxy_manual"])
-    
-    # 2. File Proxy (Rotate)
     if os.path.exists(PROXY_FILE):
         try:
             with open(PROXY_FILE, 'r') as f:
                 lines = [l.strip() for l in f.readlines() if l.strip()]
             if lines: return parse_proxy_string(random.choice(lines))
         except: pass
-    
-    # 3. NO PROXY (Return None to use Direct Internet)
     return None
 
 def get_next_number():
@@ -101,11 +94,8 @@ async def read_index(): return FileResponse('index.html')
 async def get_status():
     files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:10]
     images = [f"/captures/{os.path.basename(f)}" for f in files]
-    
-    # Proxy Check
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
-    
     return JSONResponse({"logs": logs[:50], "images": images, "running": BOT_RUNNING, "current_country": SETTINGS["country"], "current_proxy": p_disp})
 
 @app.post("/update_settings")
@@ -151,7 +141,6 @@ async def capture_step(page, step_name, wait_time=0):
 
 async def show_red_dot(page, x, y):
     try:
-        # Puts a red dot at X,Y to show where the bot clicked
         await page.evaluate(f"""
             var dot = document.createElement('div');
             dot.style.position = 'absolute'; 
@@ -166,40 +155,34 @@ async def show_red_dot(page, x, y):
         """)
     except: pass
 
-# --- 🔥 CLICK STRATEGIES (WITH RED DOTS EVERYWHERE) 🔥 ---
+# --- CLICK STRATEGIES ---
 async def execute_click_strategy(page, element, strategy_id, desc):
     try:
         await element.scroll_into_view_if_needed()
         box = await element.bounding_box()
         if not box: return False
         
-        # Calculate Coords
         cx = box['x'] + box['width'] / 2
         cy = box['y'] + box['height'] / 2
         rx = box['x'] + box['width'] - 20
         ry = cy
 
-        # ALWAYS SHOW DOT BEFORE CLICKING (Requirement Met)
         if strategy_id == 1:
             log_msg(f"🔹 Logic 1 (Std): {desc}", level="step")
-            await show_red_dot(page, cx, cy) # Visual added
+            await show_red_dot(page, cx, cy)
             await element.click(force=True, timeout=2000)
-
         elif strategy_id == 2:
             log_msg(f"🔹 Logic 2 (JS): {desc}", level="step")
-            await show_red_dot(page, cx, cy) # Visual added
+            await show_red_dot(page, cx, cy)
             await element.evaluate("e => e.click()")
-
         elif strategy_id == 3:
             log_msg(f"🔹 Logic 3 (Tap Center): {desc}", level="step")
             await show_red_dot(page, cx, cy)
             await page.touchscreen.tap(cx, cy)
-
         elif strategy_id == 4:
             log_msg(f"🔹 Logic 4 (Tap Right): {desc}", level="step")
             await show_red_dot(page, rx, ry)
             await page.touchscreen.tap(rx, ry)
-
         elif strategy_id == 5:
             log_msg(f"🔹 Logic 5 (CDP): {desc}", level="step")
             await show_red_dot(page, cx, cy)
@@ -211,9 +194,7 @@ async def execute_click_strategy(page, element, strategy_id, desc):
         return True
     except: return False
 
-# --- 🔥 SECURE STEP (LADDER) 🔥 ---
 async def secure_step(page, finder_func, success_check, step_name):
-    # Check success first
     try:
         if await success_check().count() > 0: return True
     except: pass
@@ -233,7 +214,7 @@ async def secure_step(page, finder_func, success_check, step_name):
                 
                 await asyncio.sleep(0.5)
                 await capture_step(page, f"{step_name}_L{logic_level}", wait_time=0)
-                await asyncio.sleep(4) # Wait for page load
+                await asyncio.sleep(4) 
                 
                 if await success_check().count() > 0: return True
             else:
@@ -247,7 +228,6 @@ async def secure_step(page, finder_func, success_check, step_name):
 async def master_loop():
     global BOT_RUNNING
     
-    # Check numbers first
     if not get_next_number():
         log_msg("ℹ️ No Numbers File.", level="main")
         BOT_RUNNING = False; return
@@ -281,8 +261,6 @@ async def run_fb_session(phone, proxy):
                 "headless": True, 
                 "args": ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--ignore-certificate-errors"]
             }
-            
-            # 🔥 PROXY OR DIRECT 🔥
             if proxy: launch_args["proxy"] = proxy 
 
             log_msg("🚀 Launching...", level="step")
@@ -304,6 +282,20 @@ async def run_fb_session(phone, proxy):
                 log_msg("⏳ Stabilizing (5s)...", level="step")
                 await asyncio.sleep(5) 
                 await capture_step(page, "01_Loaded", wait_time=0)
+
+                # --- 0. HANDLE COOKIES (NEW LOGIC) ---
+                # Check for "Allow all cookies" OR "Decline optional cookies"
+                cookie_btn = page.get_by_text("Allow all cookies", exact=False).or_(page.get_by_role("button", name="Allow all cookies"))
+                decline_btn = page.get_by_text("Decline optional cookies", exact=False)
+
+                if await cookie_btn.count() > 0:
+                    log_msg("🍪 Accepting Cookies...", level="step")
+                    await execute_click_strategy(page, cookie_btn.first, 1, "Cookies_Allow")
+                    await asyncio.sleep(3)
+                elif await decline_btn.count() > 0:
+                    log_msg("🍪 Declining Cookies...", level="step")
+                    await execute_click_strategy(page, decline_btn.first, 1, "Cookies_Decline")
+                    await asyncio.sleep(3)
 
                 # --- 1. CLICK CREATE ACCOUNT ---
                 if not await secure_step(
@@ -334,10 +326,9 @@ async def run_fb_session(phone, proxy):
                 else:
                     log_msg("❌ Name fields not found", level="main"); await browser.close(); return "retry"
 
-                # --- 3. DOB SELECTION (Logic: Click Year -> Scroll -> Set) ---
+                # --- 3. DOB SELECTION ---
                 log_msg("📅 Setting DOB...", level="step")
                 
-                # Try to open year picker (Look for 202x)
                 year_picker = page.locator("span").filter(has_text="202").first
                 if await year_picker.count() == 0: year_picker = page.get_by_text("202", exact=False).first
                 
@@ -345,12 +336,11 @@ async def run_fb_session(phone, proxy):
                     await execute_click_strategy(page, year_picker, 3, "Open_Year_Picker")
                     await asyncio.sleep(2)
                     
-                    # Scroll & Pick old year
                     old_year = page.get_by_text("199", exact=False).first 
                     if await old_year.count() == 0:
-                        await page.mouse.wheel(0, 500) # Scroll down
+                        await page.mouse.wheel(0, 500)
                         await asyncio.sleep(1)
-                        await page.touchscreen.tap(200, 600) # Blind tap
+                        await page.touchscreen.tap(200, 600)
                     else:
                         await execute_click_strategy(page, old_year, 3, "Select_199x")
                     
