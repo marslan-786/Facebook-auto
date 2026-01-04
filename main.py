@@ -110,8 +110,7 @@ async def read_index(): return FileResponse('index.html')
 
 @app.get("/status")
 async def get_status():
-    # Show more images to catch the red dot proof
-    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:20]
+    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:15]
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
@@ -176,12 +175,11 @@ async def show_red_dot(page, x, y):
             dot.style.pointerEvents = 'none'; dot.style.border = '4px solid yellow'; 
             dot.style.boxShadow = '0 0 15px rgba(0,0,0,0.8)';
             document.body.appendChild(dot);
-            // Remove after 1.5s so it doesn't block click logic internally
             setTimeout(() => {{ dot.remove(); }}, 1500);
         """)
     except: pass
 
-# --- CLICK LOGIC (WITH PROOF) ---
+# --- CLICK LOGIC ---
 async def execute_click_strategy(page, element, strategy_id, desc):
     try:
         await element.scroll_into_view_if_needed()
@@ -193,11 +191,9 @@ async def execute_click_strategy(page, element, strategy_id, desc):
         rx = box['x'] + box['width'] - 20
         ry = cy
 
-        # 🔥 VISUAL PROOF: SHOW DOT THEN SNAPSHOT 🔥
-        if strategy_id in [1, 3, 4, 5]: # For strategies using coords or standard
+        if strategy_id in [1, 3, 4, 5]:
             target_x, target_y = (rx, ry) if strategy_id == 4 else (cx, cy)
             await show_red_dot(page, target_x, target_y)
-            # Capture the dot on screen BEFORE action
             await capture_step(page, f"Target_Viz_{desc}", wait_time=0.2)
 
         if strategy_id == 1:
@@ -205,7 +201,6 @@ async def execute_click_strategy(page, element, strategy_id, desc):
             await element.click(force=True, timeout=2000)
         elif strategy_id == 2:
             log_msg(f"🔹 Logic 2 (JS): {desc}", level="step")
-            # JS click doesn't need coords, but we visualized center anyway
             await element.evaluate("e => e.click()")
         elif strategy_id == 3:
             log_msg(f"🔹 Logic 3 (Tap Center): {desc}", level="step")
@@ -227,7 +222,6 @@ async def secure_step(page, finder_func, success_check, step_name):
         if await success_check().count() > 0: return True
     except: pass
 
-    # 🔥 LOOP 1 to 5 🔥
     for logic_level in range(1, 6):
         if not BOT_RUNNING: return False
         log_msg(f"⏳ Finding {step_name}...", level="step")
@@ -237,15 +231,12 @@ async def secure_step(page, finder_func, success_check, step_name):
             if await btn.count() > 0:
                 if logic_level > 1: log_msg(f"♻️ Logic {logic_level}...", level="step")
                 
-                # Use .last if multiple elements found (Safety for Text locators)
                 target_element = btn.last if await btn.count() > 1 else btn.first
-                
                 await execute_click_strategy(page, target_element, logic_level, step_name)
                 
                 log_msg("⏳ Page Reloading (5s)...", level="step")
                 await asyncio.sleep(5) 
                 
-                # Check Success
                 if await success_check().count() > 0: 
                     await capture_step(page, f"{step_name}_Success")
                     return True
@@ -286,7 +277,15 @@ async def master_loop():
                 save_to_file(SUCCESS_FILE, current_number)
                 remove_current_number()
                 CURRENT_RETRIES = 0 
-            else: 
+            
+            elif res == "captcha_skip":
+                # 🔥 INSTANT FAIL FOR CAPTCHA 🔥
+                log_msg("🚫 Captcha Detected. Hard Skip.", level="main")
+                save_to_file(FAILED_FILE, current_number)
+                remove_current_number()
+                CURRENT_RETRIES = 0 
+
+            else: # Normal Retry
                 if CURRENT_RETRIES < 2: 
                     CURRENT_RETRIES += 1
                     log_msg(f"🔁 Retrying same number ({CURRENT_RETRIES}/3)...", level="main")
@@ -453,27 +452,17 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 🔥 8. TERMS (I AGREE) FIXED LOGIC 🔥 ---
+                # Terms (LAST I AGREE)
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
                 
-                # LOCATOR: Find ALL "I agree" text, use LAST one (Logic 1-5 will apply)
-                terms_btn = lambda: page.get_by_text("I agree", exact=True) # Logic inside secure_step handles .last
-                
-                # Next Page: Confirmation / Human Check / SMS
+                terms_btn = lambda: page.get_by_text("I agree", exact=True)
                 next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False)).or_(page.get_by_text("Confirm you're human", exact=False))
                 
-                # Execute Standard Secure Step (Logic 1 -> 5)
-                # It will redraw Red Dot on the LAST "I Agree" found every time
-                if not await secure_step(
-                    page,
-                    terms_btn,
-                    next_page_check,
-                    "Terms_Agree_Btn"
-                ):
+                if not await secure_step(page, terms_btn, next_page_check, "Terms_Agree_Btn"):
                     log_msg("⚠️ I Agree click timed out, observing...", level="step")
 
-                # --- 9. CONFIRMATION / HUMAN CHECK ---
+                # --- 9. CONFIRMATION / HUMAN CHECK / CAPTCHA ---
                 log_msg("👀 Checking Success...", level="main")
                 
                 # SMS Option
@@ -495,17 +484,19 @@ async def run_fb_session(phone, proxy):
                     await capture_step(page, "Success_Confirmation_Page", wait_time=0)
                     return "success"
                 
-                # Human Verification Check
+                # Human Verification Check (Blue Page)
                 if await page.get_by_text("Confirm you're human", exact=False).count() > 0:
-                    log_msg("🤖 Human Verification Detected! Clicking Continue...", level="main")
-                    await capture_step(page, "Human_Verification_Before")
+                    log_msg("🤖 Human Check (Blue Page)... Clicking Continue.", level="main")
                     cont_btn = page.get_by_role("button", name="Continue").or_(page.get_by_text("Continue", exact=True))
-                    if await cont_btn.count() > 0:
-                        await execute_click_strategy(page, cont_btn.first, 1, "Human_Continue")
-                        await asyncio.sleep(10) 
-                        await capture_step(page, "Human_Verification_After")
-                        log_msg("⚠️ Human Check Handled. Marking as Failed.", level="main")
-                        return "retry" 
+                    await execute_click_strategy(page, cont_btn.first, 1, "Human_Continue")
+                    await asyncio.sleep(8) 
+
+                # 🔥 CAPTCHA WALL DETECTION (WHITE PAGE) 🔥
+                # Detect the scrambled text image or input box
+                if await page.locator("input[name='captcha_response']").count() > 0 or await page.get_by_text("Enter the code below", exact=False).count() > 0:
+                    log_msg("🚫 CAPTCHA WALL! Hard Fail. Skipping number.", level="main")
+                    await capture_step(page, "CAPTCHA_FAIL")
+                    return "captcha_skip" # Special signal
 
                 # Watch Mode (Fallback)
                 log_msg("❓ Page Unclear. Watching...", level="main")
