@@ -19,6 +19,8 @@ live_logs = True
 # --- CONFIGURATION ---
 CAPTURE_DIR = "./captures"
 NUMBERS_FILE = "numbers.txt"
+SUCCESS_FILE = "success.txt"
+FAILED_FILE = "failed.txt"
 PROXY_FILE = "proxies.txt"
 BASE_URL = "https://m.facebook.com/reg/" 
 
@@ -30,20 +32,26 @@ app.mount("/captures", StaticFiles(directory=CAPTURE_DIR), name="captures")
 SETTINGS = {"country": "Russia", "proxy_manual": ""}
 BOT_RUNNING = False
 logs = []
+CURRENT_RETRIES = 0 
 
-# --- RANDOM DATA ---
-FIRST_NAMES = ["Ali", "Ahmed", "Kamran", "Bilal", "Usman", "Hamza", "Fahad", "Saad", "Zain", "Omer"]
-LAST_NAMES = ["Khan", "Shah", "Butt", "Jutt", "Sheikh", "Raja", "Malik", "Ansari", "Qureshi", "Baig"]
+# --- HELPERS ---
+def count_file_lines(filepath):
+    if not os.path.exists(filepath): return 0
+    try:
+        with open(filepath, "r") as f:
+            return len([l for l in f.readlines() if l.strip()])
+    except: return 0
 
 def get_random_name():
-    return random.choice(FIRST_NAMES), random.choice(LAST_NAMES)
+    FIRST = ["Ali", "Ahmed", "Kamran", "Bilal", "Usman", "Hamza", "Fahad", "Saad", "Zain", "Omer"]
+    LAST = ["Khan", "Shah", "Butt", "Jutt", "Sheikh", "Raja", "Malik", "Ansari", "Qureshi", "Baig"]
+    return random.choice(FIRST), random.choice(LAST)
 
 def get_random_password():
     base = random.choice(["King", "Lion", "Tiger", "Star", "Moon", "Super"])
     nums = random.randint(1000, 9999)
     return f"{base}@{nums}"
 
-# --- LOGGER ---
 def log_msg(message, level="step"):
     if level == "step" and not live_logs: return
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -52,7 +60,24 @@ def log_msg(message, level="step"):
     logs.insert(0, entry)
     if len(logs) > 500: logs.pop()
 
-# --- PROXY MANAGER ---
+# --- FILE MANAGERS ---
+def get_current_number_from_file():
+    if os.path.exists(NUMBERS_FILE):
+        with open(NUMBERS_FILE, "r") as f: 
+            lines = [l.strip() for l in f.readlines() if l.strip()]
+        if lines: return lines[0]
+    return None
+
+def remove_current_number():
+    if os.path.exists(NUMBERS_FILE):
+        with open(NUMBERS_FILE, "r") as f: lines = f.readlines()
+        if lines:
+            with open(NUMBERS_FILE, "w") as f: f.writelines(lines[1:])
+
+def save_to_file(filename, data):
+    with open(filename, "a") as f: f.write(f"{data}\n")
+
+# --- PROXY ---
 def parse_proxy_string(proxy_str):
     if not proxy_str or len(proxy_str) < 5: return None
     p = proxy_str.strip()
@@ -79,13 +104,6 @@ def get_current_proxy():
         except: pass
     return None
 
-def get_next_number():
-    if os.path.exists(NUMBERS_FILE):
-        with open(NUMBERS_FILE, "r") as f: lines = f.read().splitlines()
-        for num in lines: 
-            if num.strip(): return num.strip()
-    return None
-
 # --- API ---
 @app.get("/")
 async def read_index(): return FileResponse('index.html')
@@ -96,7 +114,21 @@ async def get_status():
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
-    return JSONResponse({"logs": logs[:50], "images": images, "running": BOT_RUNNING, "current_country": SETTINGS["country"], "current_proxy": p_disp})
+    
+    # 🔥 ACCURATE STATS FROM FILES 🔥
+    stats = {
+        "remaining": count_file_lines(NUMBERS_FILE),
+        "success": count_file_lines(SUCCESS_FILE),
+        "failed": count_file_lines(FAILED_FILE)
+    }
+    
+    return JSONResponse({
+        "logs": logs[:50], 
+        "images": images, 
+        "running": BOT_RUNNING, 
+        "stats": stats, # Sending real stats
+        "current_proxy": p_disp
+    })
 
 @app.post("/update_settings")
 async def update_settings(country: str = Form(...), manual_proxy: Optional[str] = Form("")):
@@ -130,7 +162,7 @@ async def stop_bot():
     log_msg("🛑 STOP COMMAND RECEIVED.", level="main")
     return {"status": "stopping"}
 
-# --- VISUAL HELPERS ---
+# --- VISUALS ---
 async def capture_step(page, step_name, wait_time=0):
     if not BOT_RUNNING: return
     if wait_time > 0: await asyncio.sleep(wait_time)
@@ -156,7 +188,7 @@ async def show_red_dot(page, x, y):
         """)
     except: pass
 
-# --- CLICK STRATEGIES ---
+# --- CLICK LOGIC ---
 async def execute_click_strategy(page, element, strategy_id, desc):
     try:
         await element.scroll_into_view_if_needed()
@@ -191,35 +223,27 @@ async def execute_click_strategy(page, element, strategy_id, desc):
             await client.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": cx, "y": cy}]})
             await asyncio.sleep(0.15)
             await client.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
-
         return True
     except: return False
 
 async def secure_step(page, finder_func, success_check, step_name):
-    # Check if already done
     try:
         if await success_check().count() > 0: return True
     except: pass
 
     for logic_level in range(1, 6):
         if not BOT_RUNNING: return False
-        
         log_msg(f"⏳ Finding {step_name}...", level="step")
         await asyncio.sleep(2) 
-        
         try:
             btn = finder_func()
             if await btn.count() > 0:
                 if logic_level > 1: log_msg(f"♻️ Logic {logic_level}...", level="step")
-                
                 await capture_step(page, f"Debug_{step_name}_L{logic_level}_Before", wait_time=0)
                 await execute_click_strategy(page, btn.first, logic_level, step_name)
-                
                 log_msg("⏳ Page Reloading (5s)...", level="step")
                 await asyncio.sleep(5) 
-                
                 await capture_step(page, f"Debug_{step_name}_L{logic_level}_After", wait_time=0)
-
                 if await success_check().count() > 0: return True
                 else: log_msg("⚠️ Next page not loaded yet...", level="step")
             else:
@@ -232,41 +256,51 @@ async def secure_step(page, finder_func, success_check, step_name):
 
 # --- WORKER ---
 async def master_loop():
-    global BOT_RUNNING
-    
-    if not get_next_number():
-        log_msg("ℹ️ No Numbers File.", level="main")
-        BOT_RUNNING = False; return
+    global BOT_RUNNING, CURRENT_RETRIES
+    if not get_current_number_from_file():
+        log_msg("ℹ️ No Numbers File.", level="main"); BOT_RUNNING = False; return
 
     log_msg("🟢 Worker Started.", level="main")
     
     while BOT_RUNNING:
-        current_number = get_next_number()
+        current_number = get_current_number_from_file()
         if not current_number:
             log_msg("ℹ️ No Numbers Left.", level="main"); BOT_RUNNING = False; break
             
         proxy_cfg = get_current_proxy()
         p_show = proxy_cfg['server'] if proxy_cfg else "🌐 Direct Internet"
         
-        log_msg(f"🔵 Processing: {current_number}", level="main") 
+        log_msg(f"🔵 Processing: {current_number} (Attempt {CURRENT_RETRIES + 1}/3)", level="main") 
         log_msg(f"🌍 Connection: {p_show}", level="step") 
         
         try:
             res = await run_fb_session(current_number, proxy_cfg)
-            if res == "success": log_msg("🎉 Session Ended.", level="main")
-            else: log_msg("❌ Session Failed.", level="main")
+            
+            if res == "success":
+                log_msg("🎉 Number DONE. Moving to Success.", level="main")
+                save_to_file(SUCCESS_FILE, current_number)
+                remove_current_number()
+                CURRENT_RETRIES = 0 
+            else: 
+                if CURRENT_RETRIES < 2: 
+                    CURRENT_RETRIES += 1
+                    log_msg(f"🔁 Retrying same number ({CURRENT_RETRIES}/3)...", level="main")
+                else:
+                    log_msg("💀 Max Retries Reached. Moving to Failed.", level="main")
+                    save_to_file(FAILED_FILE, current_number)
+                    remove_current_number()
+                    CURRENT_RETRIES = 0 
+
         except Exception as e:
             log_msg(f"🔥 Crash: {e}", level="main")
+            CURRENT_RETRIES += 1
         
         await asyncio.sleep(2)
 
 async def run_fb_session(phone, proxy):
     try:
         async with async_playwright() as p:
-            launch_args = {
-                "headless": True, 
-                "args": ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--ignore-certificate-errors"]
-            }
+            launch_args = {"headless": True, "args": ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--ignore-certificate-errors"]}
             if proxy: launch_args["proxy"] = proxy 
 
             log_msg("🚀 Launching Fresh Browser...", level="step")
@@ -280,7 +314,6 @@ async def run_fb_session(phone, proxy):
             context = await browser.new_context(**pixel_5, locale="en-US", ignore_https_errors=True)
             await context.clear_cookies()
             await context.clear_permissions()
-            
             page = await context.new_page()
 
             log_msg("🌐 Opening Facebook...", level="step")
@@ -292,14 +325,14 @@ async def run_fb_session(phone, proxy):
                 await asyncio.sleep(5) 
                 await capture_step(page, "01_Loaded", wait_time=0)
 
-                # --- 0. COOKIES ---
+                # --- STEPS ---
+                # Cookies
                 cookie_btn = page.get_by_text("Allow all cookies", exact=False).or_(page.get_by_role("button", name="Allow all cookies"))
                 if await cookie_btn.count() > 0:
-                    log_msg("🍪 Cookies Found...", level="step")
                     await execute_click_strategy(page, cookie_btn.first, 1, "Cookies")
                     await asyncio.sleep(3)
 
-                # --- 1. CREATE ACCOUNT ---
+                # Create Account
                 if not await secure_step(
                     page, 
                     lambda: page.get_by_role("button", name="Create new account").or_(page.get_by_text("Create new account")), 
@@ -307,33 +340,27 @@ async def run_fb_session(phone, proxy):
                     "Create_Account_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 2. ENTER NAME ---
+                # Names
                 fname, lname = get_random_name()
-                
-                log_msg("⏳ Waiting 5s for Fields...", level="step")
                 await asyncio.sleep(5)
-                
                 f_target = page.get_by_text("First name", exact=False).last 
                 if await f_target.count() > 0:
                     await execute_click_strategy(page, f_target, 3, "Click_First_Name_Text")
                     await asyncio.sleep(0.5)
                     await page.keyboard.type(fname, delay=100) 
                 else:
-                    log_msg("❌ First name text not found", level="main"); await browser.close(); return "retry"
-
+                    log_msg("❌ Name fields not found", level="main"); await browser.close(); return "retry"
+                
                 await asyncio.sleep(1)
-
                 l_target = page.get_by_text("Surname", exact=False).or_(page.get_by_text("Last name", exact=False)).last
                 if await l_target.count() > 0:
                     await execute_click_strategy(page, l_target, 3, "Click_Surname_Text")
                     await asyncio.sleep(0.5)
                     await page.keyboard.type(lname, delay=100) 
-                else:
-                    log_msg("❌ Surname text not found", level="main"); await browser.close(); return "retry"
-
+                
                 await capture_step(page, "02_Names_Typed", wait_time=1)
 
-                # --- NEXT ---
+                # Next
                 if not await secure_step(
                     page,
                     lambda: page.get_by_role("button", name="Next"),
@@ -341,23 +368,19 @@ async def run_fb_session(phone, proxy):
                     "Name_Next_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 3. AGE / DOB ---
+                # Age / DOB
                 log_msg("📅 DOB Step Reached...", level="step")
                 await asyncio.sleep(5) 
-                
                 if await page.get_by_text("Age", exact=True).count() > 0 or await page.locator("input[name='age']").count() > 0:
-                    log_msg("🎂 Typing Age directly...", level="step")
+                    log_msg("🎂 Typing Age...", level="step")
                     await page.keyboard.type(str(random.randint(19, 29)))
                 else:
-                    log_msg("⌨️ Typing DOB directly...", level="step")
-                    d = random.randint(1, 28)
-                    m = random.randint(1, 12)
-                    y = random.randint(1990, 2000)
-                    full_date_str = f"{d:02d}{m:02d}{y}"
-                    await page.keyboard.type(full_date_str, delay=200)
+                    log_msg("⌨️ Typing DOB...", level="step")
+                    d = random.randint(1, 28); m = random.randint(1, 12); y = random.randint(1990, 2000)
+                    await page.keyboard.type(f"{d:02d}{m:02d}{y}", delay=200)
                     await capture_step(page, "Debug_DOB_Typed", wait_time=1)
 
-                # --- NEXT AFTER DOB ---
+                # Next
                 if not await secure_step(
                     page,
                     lambda: page.get_by_role("button", name="Next"),
@@ -365,12 +388,11 @@ async def run_fb_session(phone, proxy):
                     "Age_Next_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 4. GENDER ---
+                # Gender
                 log_msg("⚧ Selecting Gender...", level="step")
                 await asyncio.sleep(2)
                 gender_opt = page.get_by_text("Male", exact=True).first
                 if await gender_opt.count() > 0: await execute_click_strategy(page, gender_opt, 3, "Male_Option")
-                
                 if not await secure_step(
                     page,
                     lambda: page.get_by_role("button", name="Next"),
@@ -378,26 +400,33 @@ async def run_fb_session(phone, proxy):
                     "Gender_Next_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 5. MOBILE NUMBER ---
+                # Mobile
                 log_msg(f"📱 Input: {phone}", level="step")
                 await asyncio.sleep(2)
                 num_input = page.locator("input[type='tel']").or_(page.locator("input[name='reg_email__']"))
-                
                 if await num_input.count() > 0:
                     await num_input.fill(phone)
                     await capture_step(page, "05_PhoneFilled", wait_time=0)
-                    
                     if not await secure_step(
                         page,
                         lambda: page.get_by_role("button", name="Next"),
-                        lambda: page.get_by_text("password", exact=False),
+                        lambda: page.get_by_text("password", exact=False).or_(page.get_by_text("Are you trying to log in?", exact=False)),
                         "Phone_Next_Btn"
                     ): await browser.close(); return "retry"
 
-                # --- 6. PASSWORD ---
+                # Popup Handle
+                continue_btn = page.get_by_text("Continue creating account", exact=False)
+                if await continue_btn.count() > 0:
+                    log_msg("⚠️ Account overlap! Continuing...", level="main")
+                    await execute_click_strategy(page, continue_btn.first, 1, "Continue_Creating")
+                    await asyncio.sleep(5)
+
+                # Password
                 pwd = get_random_password()
                 await asyncio.sleep(2)
                 pwd_input = page.locator("input[type='password']")
+                if await pwd_input.count() == 0: await asyncio.sleep(3) # Retry wait
+                
                 if await pwd_input.count() > 0:
                     await pwd_input.fill(pwd)
                     if not await secure_step(
@@ -406,11 +435,12 @@ async def run_fb_session(phone, proxy):
                         lambda: page.get_by_text("Save", exact=True).or_(page.get_by_text("Not now", exact=True)),
                         "Pwd_Next_Btn"
                     ): await browser.close(); return "retry"
+                else:
+                    log_msg("❌ Password field missing", level="main"); await browser.close(); return "retry"
 
-                # --- 7. SAVE INFO ---
+                # Save Info (Not Now)
                 await asyncio.sleep(2)
                 save_choice = page.get_by_text("Not now", exact=True)
-                
                 if not await secure_step(
                     page,
                     lambda: save_choice,
@@ -418,38 +448,46 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 8. TERMS (FIXED: LAST 'I AGREE' TEXT) ---
+                # Terms (LAST I AGREE)
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
-                
-                # 🔥 SIMPLE TEXT LOCATOR (LAST ONE) 🔥
-                # This finds ALL text saying "I agree" and picks the LAST one (which is the button).
                 terms_btn = lambda: page.get_by_text("I agree", exact=True).last
-                
-                # Success Check: Next page elements
                 next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False))
                 
-                if not await secure_step(
-                    page,
-                    terms_btn,
-                    next_page_check,
-                    "Terms_Agree_Btn"
-                ):
-                    log_msg("⚠️ I Agree click failed, observing anyway...", level="step")
+                if not await secure_step(page, terms_btn, next_page_check, "Terms_Agree_Btn"):
+                    log_msg("⚠️ I Agree click issue, observing...", level="step")
 
-                # --- 9. 1-MINUTE OBSERVATION MODE ---
-                log_msg("👀 Entering 1-Minute Watch Mode...", level="main")
+                # SMS/Confirmation Check
+                log_msg("👀 Checking Success...", level="main")
+                if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
+                    sms_opt = page.get_by_text("Send code via SMS", exact=False)
+                    if await sms_opt.count() > 0:
+                        await execute_click_strategy(page, sms_opt, 3, "Select_SMS")
+                        await asyncio.sleep(2)
+                    await secure_step(
+                        page,
+                        lambda: page.get_by_role("button", name="Continue").or_(page.get_by_role("button", name="Send code")),
+                        lambda: page.get_by_text("Enter the confirmation code", exact=False),
+                        "Send_Code_Btn"
+                    )
+
+                if await page.get_by_text("Enter the confirmation code", exact=False).count() > 0:
+                    log_msg("✅ SUCCESS! Code Sent.", level="main")
+                    await capture_step(page, "Success_Confirmation_Page", wait_time=0)
+                    return "success"
                 
-                for i in range(12): # 60 Seconds
+                # Watch Mode (1 min)
+                log_msg("❓ Page Unclear. Watching...", level="main")
+                for i in range(12): 
                     if not BOT_RUNNING: break
                     await asyncio.sleep(5)
-                    await capture_step(page, f"Post_Agree_Watch_{i+1}", wait_time=0)
-                    
-                    if await page.locator("input[name='c']").count() > 0:
-                        log_msg(f"✅ Code Input Visible!", level="main")
+                    await capture_step(page, f"Watch_{i+1}", wait_time=0)
+                    if await page.get_by_text("Enter the confirmation code", exact=False).count() > 0:
+                        log_msg("✅ SUCCESS! Found in Watch.", level="main")
+                        return "success"
                 
-                log_msg("🏁 Session Ended.", level="main")
-                return "success" 
+                log_msg("❌ Session Failed.", level="main")
+                return "retry" 
 
             except Exception as e:
                 log_msg(f"❌ Session Error: {str(e)}", level="main"); await browser.close(); return "retry"

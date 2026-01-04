@@ -8,15 +8,11 @@
     <style>
         :root { --bg: #0f172a; --panel: #1e293b; --accent: #3b82f6; --text: #e2e8f0; --green: #10b981; --red: #ef4444; --orange: #f59e0b; }
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
-        
         .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: var(--panel); border-bottom: 1px solid #334155; }
         .header h2 { margin: 0; font-size: 18px; letter-spacing: 1px; }
         .icon-btn { background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; transition: 0.2s; }
         .icon-btn:hover { color: var(--accent); }
-
         .container { display: flex; flex-direction: column; padding: 20px; gap: 20px; height: calc(100vh - 80px); }
-        
-        /* STATS */
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
         .stat-box { background: var(--panel); padding: 15px; border-radius: 10px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border-top: 3px solid transparent; }
         .stat-box h3 { margin: 0; font-size: 12px; color: #94a3b8; font-weight: normal; }
@@ -24,65 +20,43 @@
         .stat-total { border-color: var(--accent); }
         .stat-success { border-color: var(--green); }
         .stat-failed { border-color: var(--red); }
-
-        /* CARD & UPLOAD */
         .card { background: var(--panel); padding: 20px; border-radius: 10px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-size: 12px; color: #94a3b8; }
         input[type="text"] { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 5px; outline: none; }
-        
         .upload-box { border: 2px dashed #334155; padding: 15px; text-align: center; border-radius: 5px; cursor: pointer; transition: 0.2s; background: #0f172a; position: relative; overflow: hidden; font-size: 13px; color: #cbd5e1; }
         .upload-box:hover { border-color: var(--accent); background: #1e3a8a; }
-        
-        /* --- BUTTONS ROW (INLINE) --- */
         .btn-row { display: flex; gap: 10px; margin-top: 15px; }
         .btn-control { flex: 1; padding: 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
         .start { background: var(--green); color: white; }
         .stop { background: var(--red); color: white; }
         .clear-data { background: var(--orange); color: white; flex: 0.5; } 
         .btn-control:hover { opacity: 0.9; }
-
-        /* TERMINAL */
         .terminal { background: black; color: #00e676; font-family: 'Courier New', monospace; flex: 1; overflow-y: auto; padding: 15px; border-radius: 5px; font-size: 12px; border: 1px solid #333; display: flex; flex-direction: column; }
         .terminal div { margin-bottom: 2px; word-wrap: break-word; }
-
-        /* TOAST */
         #toast { visibility: hidden; min-width: 250px; background-color: #ef4444; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 2000; left: 50%; transform: translateX(-50%); top: 30px; font-size: 14px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); opacity: 0; transition: opacity 0.5s, top 0.5s; }
         #toast.show { visibility: visible; opacity: 1; top: 50px; }
-
-        /* MODALS */
         .modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); align-items: center; justify-content: center; z-index: 1000; }
         .modal-content { background: var(--panel); padding: 20px; width: 90%; max-width: 600px; border-radius: 10px; max-height: 85vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; align-items: center; }
-        
-        /* GALLERY GRID - IMPROVED FOR ALL IMAGES */
         .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
         .gallery-grid img { width: 100%; border-radius: 5px; border: 1px solid #444; cursor: pointer; transition: 0.2s; aspect-ratio: 9/16; object-fit: cover; }
         .gallery-grid img:hover { transform: scale(1.05); border-color: var(--accent); }
-        
         .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
         .btn-save { background: var(--green); flex: 1; border:none; padding: 10px; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; }
         .btn-clear { background: #475569; flex: 0.5; border:none; padding: 10px; color: #cbd5e1; border-radius: 5px; cursor: pointer; transition: 0.2s; }
         .btn-clear:hover { background: #ef4444; color: white; }
-
         .help-box { background: #0f172a; padding: 15px; border-radius: 5px; margin-top: 10px; border: 1px solid #334155; font-size: 12px; color: #cbd5e1; display: none; }
-        .help-box code { background: #334155; padding: 2px 5px; border-radius: 3px; color: var(--accent); font-family: monospace; }
-        .help-box ul { padding-left: 20px; margin: 5px 0; }
-        .help-box li { margin-bottom: 5px; }
-
     </style>
 </head>
 <body>
-
     <div id="toast">Error Message</div>
-
     <div id="settingsModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>⚙️ Configuration</h3>
                 <button class="icon-btn" onclick="toggleModal('settingsModal')"><i class="fas fa-times"></i></button>
             </div>
-            
             <div class="form-group">
                 <label>Upload Proxy List (.txt)</label>
                 <div class="upload-box" onclick="document.getElementById('proxyFile').click()">
@@ -90,64 +64,36 @@
                 </div>
                 <input type="file" id="proxyFile" accept=".txt" hidden onchange="uploadFile('proxyFile', '/upload_proxies', 'proxyFileName')">
             </div>
-
             <div class="form-group">
-                <label>
-                    Manual Proxy 
-                    <i class="fas fa-question-circle" style="color:var(--accent); cursor:pointer; margin-left:5px;" onclick="toggleProxyHelp()" title="View Formats"></i>
-                </label>
+                <label>Manual Proxy <i class="fas fa-question-circle" onclick="toggleProxyHelp()"></i></label>
                 <input type="text" id="manualProxy" placeholder="e.g. 192.168.1.1:8080">
-                
-                <div id="proxyHelp" class="help-box">
-                    <strong>✅ Supported Formats:</strong>
-                    <ul>
-                        <li><code>ip:port:user:pass</code> (Recommended)</li>
-                        <li><code>user:pass@ip:port</code></li>
-                        <li><code>http://user:pass@ip:port</code></li>
-                    </ul>
+                <div id="proxyHelp" class="help-box" style="display:none">
+                    <strong>✅ Formats:</strong> ip:port:user:pass OR ip:port
                 </div>
             </div>
-
             <div class="modal-actions">
                 <button class="btn-save" onclick="saveSettings()">Save Configuration</button>
-                <button class="btn-clear" onclick="clearProxyInput()"><i class="fas fa-eraser"></i> Clear Proxy</button>
+                <button class="btn-clear" onclick="clearProxyInput()">Clear Proxy</button>
             </div>
         </div>
     </div>
-
     <div id="galleryModal" class="modal">
         <div class="modal-content" style="max-width: 900px;">
-            <div class="modal-header">
-                <h3>📸 Live Debug Gallery (All Steps)</h3>
-                <button class="icon-btn" onclick="toggleModal('galleryModal')"><i class="fas fa-times"></i></button>
-            </div>
+            <div class="modal-header"><h3>📸 Live Debug Gallery</h3><button class="icon-btn" onclick="toggleModal('galleryModal')"><i class="fas fa-times"></i></button></div>
             <div class="gallery-grid" id="galleryGrid"></div>
         </div>
     </div>
-
     <div class="header">
         <button class="icon-btn" onclick="openGallery()"><i class="fas fa-images"></i></button>
         <h2>FACEBOOK BOT</h2>
         <button class="icon-btn" onclick="toggleModal('settingsModal')"><i class="fas fa-cog"></i></button>
     </div>
-
     <div class="container">
-        
         <div class="stats-grid">
-            <div class="stat-box stat-total">
-                <h3>Total Loaded</h3>
-                <div class="count" id="countTotal">0</div>
-            </div>
-            <div class="stat-box stat-success">
-                <h3>Success</h3>
-                <div class="count" id="countSuccess">0</div>
-            </div>
-            <div class="stat-box stat-failed">
-                <h3>Failed</h3>
-                <div class="count" id="countFailed">0</div>
-            </div>
+            <div class="stat-box stat-total"><h3>Remaining</h3><div class="count" id="countTotal">0</div></div>
+            <div class="stat-box stat-success"><h3>Success</h3><div class="count" id="countSuccess">0</div></div>
+            <div class="stat-box stat-failed"><h3>Failed</h3><div class="count" id="countFailed">0</div></div>
         </div>
-
         <div class="card">
             <div class="form-group" style="margin-bottom:0;">
                 <div class="upload-box" onclick="document.getElementById('numFile').click()">
@@ -155,216 +101,106 @@
                 </div>
                 <input type="file" id="numFile" accept=".txt" hidden onchange="uploadFile('numFile', '/upload_numbers', 'numFileName')">
             </div>
-            
             <div class="btn-row">
                 <button id="mainBtn" class="btn-control start" onclick="toggleBot()">START</button>
                 <button class="btn-control clear-data" onclick="clearLocalData()"><i class="fas fa-trash"></i> CLEAR</button>
             </div>
         </div>
-
-        <div class="terminal" id="terminal">
-            <div>> System Ready. Load numbers to begin.</div>
-        </div>
-
+        <div class="terminal" id="terminal"><div>> System Ready.</div></div>
     </div>
-
     <script>
-        // --- LOCAL STORAGE MANAGER ---
-        const CACHE_KEY_PREFIX = "fb_bot_v1_";
-        
-        let totalNums = parseInt(localStorage.getItem(CACHE_KEY_PREFIX + 'total')) || 0;
-        let successCount = parseInt(localStorage.getItem(CACHE_KEY_PREFIX + 'success')) || 0;
-        let failCount = parseInt(localStorage.getItem(CACHE_KEY_PREFIX + 'failed')) || 0;
         let userScrolledUp = false;
-
         window.onload = function() {
-            // Restore Settings
             const savedP = localStorage.getItem('manualProxy');
             if(savedP) document.getElementById('manualProxy').value = savedP;
-
-            // Restore Session
-            restoreSession();
-
             const term = document.getElementById('terminal');
             term.addEventListener('scroll', () => {
-                if (term.scrollTop + term.clientHeight < term.scrollHeight - 10) {
-                    userScrolledUp = true;
-                } else {
-                    userScrolledUp = false;
-                }
+                if (term.scrollTop + term.clientHeight < term.scrollHeight - 10) userScrolledUp = true;
+                else userScrolledUp = false;
             });
         };
-
-        function restoreSession() {
-            document.getElementById('countTotal').innerText = totalNums;
-            document.getElementById('countSuccess').innerText = successCount;
-            document.getElementById('countFailed').innerText = failCount;
-
-            const savedLogs = localStorage.getItem(CACHE_KEY_PREFIX + 'logs');
-            if(savedLogs) {
-                document.getElementById('terminal').innerHTML = savedLogs;
-                document.getElementById('terminal').scrollTop = document.getElementById('terminal').scrollHeight;
-            }
-
-            const savedNumFile = localStorage.getItem(CACHE_KEY_PREFIX + 'numFileName');
-            if(savedNumFile) document.getElementById('numFileName').innerText = "✅ " + savedNumFile;
-        }
-
-        function saveSessionState() {
-            localStorage.setItem(CACHE_KEY_PREFIX + 'total', totalNums);
-            localStorage.setItem(CACHE_KEY_PREFIX + 'success', successCount);
-            localStorage.setItem(CACHE_KEY_PREFIX + 'failed', failCount);
-            localStorage.setItem(CACHE_KEY_PREFIX + 'logs', document.getElementById('terminal').innerHTML);
-        }
-
-        function clearLocalData() {
-            if(!confirm("Clear logs and stats? (Proxy will remain)")) return;
-            
-            totalNums = 0; successCount = 0; failCount = 0;
-            
-            localStorage.removeItem(CACHE_KEY_PREFIX + 'total');
-            localStorage.removeItem(CACHE_KEY_PREFIX + 'success');
-            localStorage.removeItem(CACHE_KEY_PREFIX + 'failed');
-            localStorage.removeItem(CACHE_KEY_PREFIX + 'logs');
-            localStorage.removeItem(CACHE_KEY_PREFIX + 'numFileName');
-
-            document.getElementById('countTotal').innerText = 0;
-            document.getElementById('countSuccess').innerText = 0;
-            document.getElementById('countFailed').innerText = 0;
-            document.getElementById('terminal').innerHTML = "<div>> Data Cleared. Ready.</div>";
-            document.getElementById('numFileName').innerText = "📂 Upload Numbers.txt";
-            
-            if(isRunning) toggleBot();
-        }
-
         function showToast(msg) {
             const x = document.getElementById("toast");
-            x.innerText = msg;
-            x.className = "show";
+            x.innerText = msg; x.className = "show";
             setTimeout(function(){ x.className = x.className.replace("show", ""); }, 3000);
         }
-
         function toggleModal(id) {
             const m = document.getElementById(id);
             m.style.display = m.style.display === 'flex' ? 'none' : 'flex';
         }
-
         function toggleProxyHelp() {
             const h = document.getElementById('proxyHelp');
             h.style.display = h.style.display === 'block' ? 'none' : 'block';
         }
-
-        function clearProxyInput() {
-            document.getElementById('manualProxy').value = "";
-        }
-
+        function clearProxyInput() { document.getElementById('manualProxy').value = ""; }
         async function uploadFile(inputId, endpoint, labelId) {
             const fileInput = document.getElementById(inputId);
             const file = fileInput.files[0];
             if(!file) return;
-
-            if (!file.name.endsWith('.txt')) {
-                showToast("🚫 Error: Only .txt files supported!");
-                fileInput.value = ""; 
-                return;
-            }
-
             const formData = new FormData();
             formData.append('file', file);
             document.getElementById(labelId).innerText = "Uploading...";
-            
-            if(inputId === 'numFile') {
-                const text = await file.text();
-                totalNums = text.split('\n').filter(l => l.trim()).length;
-                document.getElementById('countTotal').innerText = totalNums;
-                localStorage.setItem(CACHE_KEY_PREFIX + 'total', totalNums);
-                localStorage.setItem(CACHE_KEY_PREFIX + 'numFileName', file.name);
-            }
-
             try {
                 await fetch(endpoint, { method: 'POST', body: formData });
                 document.getElementById(labelId).innerText = "✅ " + file.name;
             } catch(e) { showToast("Upload Failed!"); }
         }
-
         async function saveSettings() {
-            // Country is removed, sending empty or default string
             const proxy = document.getElementById('manualProxy').value;
             localStorage.setItem('manualProxy', proxy);
             const formData = new FormData();
-            formData.append('country', "Default"); // Not used by bot anymore
+            formData.append('country', "Default");
             formData.append('manual_proxy', proxy);
             await fetch('/update_settings', { method: 'POST', body: formData });
             document.getElementById('settingsModal').style.display = 'none';
         }
-
         let isRunning = false;
         async function toggleBot() {
             const btn = document.getElementById('mainBtn');
             if (!isRunning) {
-                await saveSettings(); 
-                await fetch('/start', {method: 'POST'});
-                btn.innerText = "STOP";
-                btn.classList.remove('start'); btn.classList.add('stop');
-                isRunning = true;
+                await saveSettings(); await fetch('/start', {method: 'POST'});
+                btn.innerText = "STOP"; btn.classList.remove('start'); btn.classList.add('stop'); isRunning = true;
             } else {
                 await fetch('/stop', {method: 'POST'});
-                btn.innerText = "START";
-                btn.classList.remove('stop'); btn.classList.add('start');
-                isRunning = false;
+                btn.innerText = "START"; btn.classList.remove('stop'); btn.classList.add('start'); isRunning = false;
             }
         }
-
-        async function openGallery() {
-            toggleModal('galleryModal');
+        async function openGallery() { toggleModal('galleryModal'); }
+        async function clearLocalData() {
+            if(!confirm("Reset stats display?")) return;
+            document.getElementById('terminal').innerHTML = "<div>> Log Cleared.</div>";
         }
-
         async function pollStatus() {
             try {
                 const res = await fetch('/status');
                 const data = await res.json();
                 
+                // 🔥 REAL STATS FROM PYTHON FILE COUNTS 🔥
+                if(data.stats) {
+                    document.getElementById('countSuccess').innerText = data.stats.success;
+                    document.getElementById('countFailed').innerText = data.stats.failed;
+                    document.getElementById('countTotal').innerText = data.stats.remaining;
+                }
+
                 const term = document.getElementById('terminal');
                 const chronoLogs = [...data.logs].reverse(); 
                 const newHTML = chronoLogs.map(l => `<div>${l}</div>`).join('');
-                
-                if(term.innerHTML !== newHTML && newHTML.length > 10) {
+                if(term.innerHTML !== newHTML) {
                     term.innerHTML = newHTML;
                     if (!userScrolledUp) term.scrollTop = term.scrollHeight; 
-                    saveSessionState();
                 }
 
                 const btn = document.getElementById('mainBtn');
                 if (data.running && !isRunning) {
-                    isRunning = true;
-                    btn.innerText = "STOP";
+                    isRunning = true; btn.innerText = "STOP";
                     btn.classList.remove('start'); btn.classList.add('stop');
-                }
-
-                const logsStr = data.logs.join('\n');
-                const succ = (logsStr.match(/Verified/g) || []).length;
-                const fail = (logsStr.match(/Failed/g) || []).length;
-                
-                if(succ > 0 || fail > 0) {
-                     if(succ > successCount) successCount = succ;
-                     if(fail > failCount) failCount = fail;
-                     document.getElementById('countSuccess').innerText = successCount;
-                     document.getElementById('countFailed').innerText = failCount;
-                     saveSessionState(); 
                 }
 
                 if(document.getElementById('galleryModal').style.display === 'flex') {
                     const grid = document.getElementById('galleryGrid');
-                    // 🔥 SHOW ALL IMAGES (NO FILTER) 🔥
-                    if (data.images.length === 0) {
-                        grid.innerHTML = "<p style='color:#888; text-align:center;'>No images yet.</p>";
-                    } else {
-                        grid.innerHTML = data.images.map(url => 
-                            `<img src="${url}" onclick="window.open('${url}', '_blank')" title="${url.split('/').pop()}">`
-                        ).join('');
-                    }
+                    if (data.images.length === 0) grid.innerHTML = "<p style='color:#888;text-align:center;'>No images.</p>";
+                    else grid.innerHTML = data.images.map(url => `<img src="${url}" onclick="window.open('${url}', '_blank')">`).join('');
                 }
-
             } catch(e) {}
         }
         setInterval(pollStatus, 1500);
