@@ -110,7 +110,8 @@ async def read_index(): return FileResponse('index.html')
 
 @app.get("/status")
 async def get_status():
-    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:15]
+    # Show more images to catch the red dot proof
+    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:20]
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
@@ -170,16 +171,17 @@ async def show_red_dot(page, x, y):
             dot.style.position = 'absolute'; 
             dot.style.left = '{x-15}px'; dot.style.top = '{y-15}px';
             dot.style.width = '30px'; dot.style.height = '30px'; 
-            dot.style.background = 'rgba(255, 0, 0, 0.7)'; 
+            dot.style.background = 'rgba(255, 0, 0, 0.8)'; 
             dot.style.borderRadius = '50%'; dot.style.zIndex = '2147483647'; 
-            dot.style.pointerEvents = 'none'; dot.style.border = '3px solid white'; 
-            dot.style.boxShadow = '0 0 10px rgba(255,0,0,0.5)';
+            dot.style.pointerEvents = 'none'; dot.style.border = '4px solid yellow'; 
+            dot.style.boxShadow = '0 0 15px rgba(0,0,0,0.8)';
             document.body.appendChild(dot);
+            // Remove after 1.5s so it doesn't block click logic internally
             setTimeout(() => {{ dot.remove(); }}, 1500);
         """)
     except: pass
 
-# --- CLICK LOGIC ---
+# --- CLICK LOGIC (WITH PROOF) ---
 async def execute_click_strategy(page, element, strategy_id, desc):
     try:
         await element.scroll_into_view_if_needed()
@@ -191,25 +193,28 @@ async def execute_click_strategy(page, element, strategy_id, desc):
         rx = box['x'] + box['width'] - 20
         ry = cy
 
+        # 🔥 VISUAL PROOF: SHOW DOT THEN SNAPSHOT 🔥
+        if strategy_id in [1, 3, 4, 5]: # For strategies using coords or standard
+            target_x, target_y = (rx, ry) if strategy_id == 4 else (cx, cy)
+            await show_red_dot(page, target_x, target_y)
+            # Capture the dot on screen BEFORE action
+            await capture_step(page, f"Target_Viz_{desc}", wait_time=0.2)
+
         if strategy_id == 1:
             log_msg(f"🔹 Logic 1 (Std): {desc}", level="step")
-            await show_red_dot(page, cx, cy)
             await element.click(force=True, timeout=2000)
         elif strategy_id == 2:
             log_msg(f"🔹 Logic 2 (JS): {desc}", level="step")
-            await show_red_dot(page, cx, cy)
+            # JS click doesn't need coords, but we visualized center anyway
             await element.evaluate("e => e.click()")
         elif strategy_id == 3:
             log_msg(f"🔹 Logic 3 (Tap Center): {desc}", level="step")
-            await show_red_dot(page, cx, cy)
             await page.touchscreen.tap(cx, cy)
         elif strategy_id == 4:
             log_msg(f"🔹 Logic 4 (Tap Right): {desc}", level="step")
-            await show_red_dot(page, rx, ry)
             await page.touchscreen.tap(rx, ry)
         elif strategy_id == 5:
             log_msg(f"🔹 Logic 5 (CDP): {desc}", level="step")
-            await show_red_dot(page, cx, cy)
             client = await page.context.new_cdp_session(page)
             await client.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": cx, "y": cy}]})
             await asyncio.sleep(0.15)
@@ -218,43 +223,39 @@ async def execute_click_strategy(page, element, strategy_id, desc):
     except: return False
 
 async def secure_step(page, finder_func, success_check, step_name):
-    # Check if already passed (Fast Path)
     try:
         if await success_check().count() > 0: return True
     except: pass
 
-    # 🔥 TRY ALL 5 LOGICS SEQUENTIALLY 🔥
+    # 🔥 LOOP 1 to 5 🔥
     for logic_level in range(1, 6):
         if not BOT_RUNNING: return False
-        
         log_msg(f"⏳ Finding {step_name}...", level="step")
         await asyncio.sleep(2) 
-        
         try:
             btn = finder_func()
             if await btn.count() > 0:
                 if logic_level > 1: log_msg(f"♻️ Logic {logic_level}...", level="step")
                 
-                await capture_step(page, f"Debug_{step_name}_L{logic_level}_Before", wait_time=0)
-                await execute_click_strategy(page, btn.last, logic_level, step_name) # Using .last mostly better for stacked elements
+                # Use .last if multiple elements found (Safety for Text locators)
+                target_element = btn.last if await btn.count() > 1 else btn.first
                 
-                # 🔥 HARD WAIT 5 SECONDS 🔥
+                await execute_click_strategy(page, target_element, logic_level, step_name)
+                
                 log_msg("⏳ Page Reloading (5s)...", level="step")
                 await asyncio.sleep(5) 
                 
-                await capture_step(page, f"Debug_{step_name}_L{logic_level}_After", wait_time=0)
-
-                # Check if Success
+                # Check Success
                 if await success_check().count() > 0: 
+                    await capture_step(page, f"{step_name}_Success")
                     return True
                 else: 
-                    log_msg("⚠️ Next page not loaded yet...", level="step")
+                    log_msg(f"⚠️ {step_name} click didn't work (L{logic_level})...", level="step")
             else:
                 if logic_level == 1: log_msg(f"⚠️ {step_name} missing...", level="step")
         except Exception: pass
     
-    # Only if ALL 5 failed
-    log_msg(f"❌ Failed: {step_name} (All 5 Logics Tried)", level="main")
+    log_msg(f"❌ Failed: {step_name} (All 5 Logics Failed)", level="main")
     await capture_step(page, f"Stuck_{step_name}", wait_time=0)
     return False
 
@@ -452,24 +453,25 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 🔥 8. TERMS (FULL SEQUENTIAL SECURE STEP) 🔥 ---
+                # --- 🔥 8. TERMS (I AGREE) FIXED LOGIC 🔥 ---
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
                 
-                # Locator: Last "I agree" text
-                terms_btn = lambda: page.get_by_text("I agree", exact=True).last
+                # LOCATOR: Find ALL "I agree" text, use LAST one (Logic 1-5 will apply)
+                terms_btn = lambda: page.get_by_text("I agree", exact=True) # Logic inside secure_step handles .last
                 
-                # Next Page: Confirmation Code
-                next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False))
+                # Next Page: Confirmation / Human Check / SMS
+                next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False)).or_(page.get_by_text("Confirm you're human", exact=False))
                 
                 # Execute Standard Secure Step (Logic 1 -> 5)
+                # It will redraw Red Dot on the LAST "I Agree" found every time
                 if not await secure_step(
                     page,
                     terms_btn,
                     next_page_check,
                     "Terms_Agree_Btn"
                 ):
-                    log_msg("⚠️ I Agree failed all logics, forcing observation...", level="step")
+                    log_msg("⚠️ I Agree click timed out, observing...", level="step")
 
                 # --- 9. CONFIRMATION / HUMAN CHECK ---
                 log_msg("👀 Checking Success...", level="main")
