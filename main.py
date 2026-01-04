@@ -320,7 +320,6 @@ async def run_fb_session(phone, proxy):
                 # Cookies
                 cookie_btn = page.get_by_text("Allow all cookies", exact=False).or_(page.get_by_role("button", name="Allow all cookies"))
                 if await cookie_btn.count() > 0:
-                    log_msg("🍪 Cookies Found...", level="step")
                     await execute_click_strategy(page, cookie_btn.first, 1, "Cookies")
                     await asyncio.sleep(3)
 
@@ -440,43 +439,34 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 🔥 8. TERMS (SMART LOOP for LAST I AGREE) 🔥 ---
+                # Terms (LAST I AGREE)
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
+                terms_btn = lambda: page.get_by_text("I agree", exact=True).last
                 
-                # Locator: Find ALL "I agree" texts, take the LAST one
-                terms_locator = page.get_by_text("I agree", exact=True).last 
-                
-                # Retry Loop for Click & Vanish
+                # Manual Click Logic for I Agree
                 clicked_successfully = False
                 for attempt in range(3):
-                    if await terms_locator.count() > 0:
+                    if await terms_btn().count() > 0:
                         log_msg(f"🖱️ Clicking I Agree (Attempt {attempt+1})...", level="step")
-                        
-                        # 1. Click
-                        await execute_click_strategy(page, terms_locator, 3, "I_Agree_Final")
+                        await execute_click_strategy(page, terms_btn().last, 3, "I_Agree_Final")
                         await asyncio.sleep(2)
-                        
-                        # 2. Check if button DISAPPEARED (Loading started)
-                        if await terms_locator.count() == 0:
-                            log_msg("✅ Button Disappeared! Loading (10s Wait)...", level="step")
+                        if await terms_btn().count() == 0:
+                            log_msg("✅ Button Disappeared! Loading...", level="step")
                             clicked_successfully = True
-                            await asyncio.sleep(10) # The requested 10s wait
+                            await asyncio.sleep(10)
                             break
-                        else:
-                            log_msg("⚠️ Button still visible, retrying...", level="step")
                     else:
-                        break # Button not found at all
+                        break
                 
                 if not clicked_successfully:
-                    log_msg("❌ Failed to click 'I Agree' properly.", level="main")
-                    await capture_step(page, "Error_IAgree_Stuck")
+                    log_msg("❌ I Agree Failed.", level="main")
                     await browser.close(); return "retry"
 
-                # --- 9. CONFIRMATION CHECK ---
+                # --- 9. CONFIRMATION / HUMAN CHECK ---
                 log_msg("👀 Checking Success...", level="main")
                 
-                # SMS Select Check (Intermediate)
+                # Check 1: SMS Option
                 if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
                     sms_opt = page.get_by_text("Send code via SMS", exact=False)
                     if await sms_opt.count() > 0:
@@ -489,11 +479,26 @@ async def run_fb_session(phone, proxy):
                         "Send_Code_Btn"
                     )
 
+                # Check 2: Success
                 if await page.get_by_text("Enter the confirmation code", exact=False).count() > 0:
                     log_msg("✅ SUCCESS! Code Sent.", level="main")
                     await capture_step(page, "Success_Confirmation_Page", wait_time=0)
                     return "success"
                 
+                # 🔥 CHECK 3: HUMAN VERIFICATION (New Logic) 🔥
+                if await page.get_by_text("Confirm you're human", exact=False).count() > 0:
+                    log_msg("🤖 Human Verification Detected! Clicking Continue...", level="main")
+                    await capture_step(page, "Human_Verification_Before")
+                    
+                    cont_btn = page.get_by_role("button", name="Continue").or_(page.get_by_text("Continue", exact=True))
+                    if await cont_btn.count() > 0:
+                        await execute_click_strategy(page, cont_btn.first, 1, "Human_Continue")
+                        await asyncio.sleep(10) # Wait for result
+                        
+                        await capture_step(page, "Human_Verification_After")
+                        log_msg("⚠️ Human Check Handled. Marking as Failed for safety.", level="main")
+                        return "retry" # Treat as fail to retry later or skip
+
                 # Watch Mode (Fallback)
                 log_msg("❓ Page Unclear. Watching...", level="main")
                 for i in range(12): 
