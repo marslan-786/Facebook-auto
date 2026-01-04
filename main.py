@@ -205,7 +205,6 @@ async def secure_step(page, finder_func, success_check, step_name):
     for s in range(5):
         if not BOT_RUNNING: return False
         await asyncio.sleep(1)
-        # Early exit if found immediately
         try: 
             if await finder_func().count() > 0: break 
         except: pass
@@ -301,7 +300,7 @@ async def run_fb_session(phone, proxy):
                     await execute_click_strategy(page, cookie_btn.first, 1, "Cookies")
                     await asyncio.sleep(3)
 
-                # --- 1. CLICK CREATE NEW ACCOUNT ---
+                # --- 1. CREATE ACCOUNT ---
                 if not await secure_step(
                     page, 
                     lambda: page.get_by_role("button", name="Create new account").or_(page.get_by_text("Create new account")), 
@@ -309,8 +308,7 @@ async def run_fb_session(phone, proxy):
                     "Create_Account_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 2. NAME (TEXT SEARCH + KEYBOARD TYPE) ---
-                # 🔥 NEW HUMAN LOGIC: Find Text -> Click -> Type 🔥
+                # --- 2. ENTER NAME (TEXT SEARCH + KEYBOARD TYPE) ---
                 fname, lname = get_random_name()
                 
                 log_msg("⏳ Waiting 5s for Fields...", level="step")
@@ -318,13 +316,11 @@ async def run_fb_session(phone, proxy):
                 
                 # --- FIRST NAME ---
                 log_msg(f"✍️ First Name: {fname}", level="step")
-                # Look for TEXT "First name" anywhere (Placeholder or Label)
                 f_target = page.get_by_text("First name", exact=False).last 
-                
                 if await f_target.count() > 0:
                     await execute_click_strategy(page, f_target, 3, "Click_First_Name_Text")
                     await asyncio.sleep(0.5)
-                    await page.keyboard.type(fname, delay=100) # Human Typing
+                    await page.keyboard.type(fname, delay=100) 
                 else:
                     log_msg("❌ First name text not found", level="main")
                     await capture_step(page, "Err_Fname_Not_Found"); await browser.close(); return "retry"
@@ -333,13 +329,11 @@ async def run_fb_session(phone, proxy):
 
                 # --- SURNAME ---
                 log_msg(f"✍️ Surname: {lname}", level="step")
-                # Look for TEXT "Surname" or "Last name"
                 l_target = page.get_by_text("Surname", exact=False).or_(page.get_by_text("Last name", exact=False)).last
-                
                 if await l_target.count() > 0:
                     await execute_click_strategy(page, l_target, 3, "Click_Surname_Text")
                     await asyncio.sleep(0.5)
-                    await page.keyboard.type(lname, delay=100) # Human Typing
+                    await page.keyboard.type(lname, delay=100) 
                 else:
                     log_msg("❌ Surname text not found", level="main")
                     await capture_step(page, "Err_Lname_Not_Found"); await browser.close(); return "retry"
@@ -350,39 +344,56 @@ async def run_fb_session(phone, proxy):
                 if not await secure_step(
                     page,
                     lambda: page.get_by_role("button", name="Next"),
-                    lambda: page.get_by_text("birthday", exact=False).or_(page.get_by_text("date of birth", exact=False)),
+                    lambda: page.get_by_text("birthday", exact=False).or_(page.get_by_text("date of birth", exact=False)).or_(page.get_by_text("Age", exact=True).or_(page.get_by_text("How old are you", exact=False))),
                     "Name_Next_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 3. DOB SELECTION ---
-                log_msg("📅 Setting DOB...", level="step")
-                await asyncio.sleep(3) # Wait for popup
+                # --- 3. AGE / DOB (DUAL LOGIC) ---
+                log_msg("📅 Checking Age/DOB...", level="step")
+                await asyncio.sleep(3) 
                 
-                # Year Picker Logic
-                year_picker = page.locator("span").filter(has_text="202").first
-                if await year_picker.count() == 0: year_picker = page.get_by_text("202", exact=False).first
+                # 🔥 CASE 1: AGE INPUT (New Style) 🔥
+                age_label = page.get_by_text("Age", exact=True).or_(page.get_by_text("How old are you", exact=False))
+                age_input = page.locator("input[name='age']").or_(page.locator("input[type='number']"))
                 
-                if await year_picker.count() > 0:
-                    await execute_click_strategy(page, year_picker, 3, "Open_Year_Picker")
-                    await asyncio.sleep(2)
+                if await age_label.count() > 0 or await age_input.count() > 0:
+                    log_msg("🎂 Found Age Input! Typing...", level="step")
+                    random_age = str(random.randint(19, 29))
                     
-                    old_year = page.get_by_text("199", exact=False).first 
-                    if await old_year.count() == 0:
-                        await page.mouse.wheel(0, 500)
-                        await asyncio.sleep(1)
-                        await page.touchscreen.tap(200, 600)
+                    if await age_input.count() > 0:
+                        await age_input.fill(random_age)
                     else:
-                        await execute_click_strategy(page, old_year, 3, "Select_199x")
+                        # Fallback: Click label & Type
+                        await execute_click_strategy(page, age_label.last, 3, "Click_Age_Label")
+                        await page.keyboard.type(random_age)
                     
                     await asyncio.sleep(1)
-                    set_btn = page.get_by_text("Set", exact=True).or_(page.get_by_role("button", name="Set"))
-                    if await set_btn.count() > 0: await execute_click_strategy(page, set_btn, 1, "Set_DOB")
-                
+
+                # 🔥 CASE 2: DOB PICKER (Old Style) 🔥
+                else:
+                    log_msg("📅 Found DOB Picker...", level="step")
+                    year_picker = page.locator("span").filter(has_text="202").first
+                    if await year_picker.count() > 0:
+                        await execute_click_strategy(page, year_picker, 3, "Open_Year_Picker")
+                        await asyncio.sleep(2)
+                        
+                        old_year = page.get_by_text("199", exact=False).first 
+                        if await old_year.count() > 0:
+                            await execute_click_strategy(page, old_year, 3, "Select_199x")
+                        else:
+                            await page.mouse.wheel(0, 500)
+                            await page.touchscreen.tap(200, 600)
+                        
+                        await asyncio.sleep(1)
+                        set_btn = page.get_by_text("Set", exact=True).or_(page.get_by_role("button", name="Set"))
+                        if await set_btn.count() > 0: await execute_click_strategy(page, set_btn, 1, "Set_DOB")
+
+                # --- NEXT AFTER AGE/DOB ---
                 if not await secure_step(
                     page,
                     lambda: page.get_by_role("button", name="Next"),
                     lambda: page.get_by_text("gender", exact=False).or_(page.get_by_text("Male", exact=True)),
-                    "DOB_Next_Btn"
+                    "Age_Next_Btn"
                 ): await browser.close(); return "retry"
 
                 # --- 4. GENDER ---
