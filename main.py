@@ -194,47 +194,41 @@ async def execute_click_strategy(page, element, strategy_id, desc):
         return True
     except: return False
 
-# --- 🔥 SECURE STEP (SMART WAIT) 🔥 ---
 async def secure_step(page, finder_func, success_check, step_name):
-    # 1. Check if already there (Fast path)
+    # Quick check
     try:
         if await success_check().count() > 0: return True
     except: pass
 
+    # WAIT 5 SECONDS (Smart Wait)
+    log_msg(f"⏳ Waiting 5s for {step_name}...", level="step")
+    for s in range(5):
+        if not BOT_RUNNING: return False
+        await asyncio.sleep(1)
+        # Early exit if found immediately
+        try: 
+            if await finder_func().count() > 0: break 
+        except: pass
+
+    # Execution Loop
     for logic_level in range(1, 6):
         if not BOT_RUNNING: return False
-        
-        log_msg(f"⏳ Finding {step_name}...", level="step")
-        await asyncio.sleep(2) 
         
         try:
             btn = finder_func()
             if await btn.count() > 0:
                 if logic_level > 1: log_msg(f"♻️ Logic {logic_level}...", level="step")
                 
-                # Perform Click
                 await execute_click_strategy(page, btn.first, logic_level, step_name)
                 
-                # --- 🔥 SMART PATIENCE LOOP 🔥 ---
-                # Check every 1s for up to 12s. 
-                # Breaks early if success found.
-                log_msg("⏳ Waiting for load...", level="step")
-                for s in range(12):
-                    if not BOT_RUNNING: return False
-                    await asyncio.sleep(1)
-                    try:
-                        if await success_check().count() > 0:
-                            # Found it! Visual capture and proceed
-                            # Capture occasionally to not flood logs
-                            if logic_level > 1: await capture_step(page, f"{step_name}_Success", wait_time=0)
-                            return True
-                    except: pass
+                # Wait for reaction
+                await asyncio.sleep(1) 
                 
-                # If loop finishes and still not found, try next logic
-                log_msg(f"⚠️ {step_name} click didn't trigger next page yet...", level="step")
-
+                if await success_check().count() > 0: 
+                    if logic_level > 1: await capture_step(page, f"{step_name}_Success", wait_time=0)
+                    return True
             else:
-                log_msg(f"⚠️ {step_name} button not visible...", level="step")
+                if logic_level == 1: log_msg(f"⚠️ {step_name} missing...", level="step")
         except Exception: pass
     
     log_msg(f"❌ Failed: {step_name}", level="main")
@@ -307,39 +301,64 @@ async def run_fb_session(phone, proxy):
                     await execute_click_strategy(page, cookie_btn.first, 1, "Cookies")
                     await asyncio.sleep(3)
 
-                # --- 1. CREATE ACCOUNT ---
-                # Smart Wait is handled inside secure_step now
+                # --- 1. CLICK CREATE NEW ACCOUNT ---
                 if not await secure_step(
                     page, 
                     lambda: page.get_by_role("button", name="Create new account").or_(page.get_by_text("Create new account")), 
-                    lambda: page.get_by_text("First name", exact=False), 
+                    lambda: page.get_by_text("First name", exact=False).or_(page.get_by_placeholder("First name")).or_(page.locator("input[name='firstname']")), 
                     "Create_Account_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 2. ENTER NAME ---
+                # --- 2. NAME (TEXT SEARCH + KEYBOARD TYPE) ---
+                # 🔥 NEW HUMAN LOGIC: Find Text -> Click -> Type 🔥
                 fname, lname = get_random_name()
-                log_msg(f"✍️ Name: {fname} {lname}", level="step")
                 
-                # Using robust selectors
-                f_input = page.locator("input[name='firstname']").or_(page.get_by_placeholder("First name")).or_(page.get_by_label("First name")).or_(page.locator("input[aria-label='First name']"))
-                l_input = page.get_by_text("Last name", exact=False),
+                log_msg("⏳ Waiting 5s for Fields...", level="step")
+                await asyncio.sleep(5)
                 
-                if await f_input.count() > 0:
-                    await f_input.first.fill(fname)
-                    await l_input.first.fill(lname)
-                    await capture_step(page, "02_NameFilled", wait_time=0)
-                    
-                    if not await secure_step(
-                        page,
-                        lambda: page.get_by_role("button", name="Next"),
-                        lambda: page.get_by_text("birthday", exact=False).or_(page.get_by_text("date of birth", exact=False)),
-                        "Name_Next_Btn"
-                    ): await browser.close(); return "retry"
+                # --- FIRST NAME ---
+                log_msg(f"✍️ First Name: {fname}", level="step")
+                # Look for TEXT "First name" anywhere (Placeholder or Label)
+                f_target = page.get_by_text("First name", exact=False).last 
+                
+                if await f_target.count() > 0:
+                    await execute_click_strategy(page, f_target, 3, "Click_First_Name_Text")
+                    await asyncio.sleep(0.5)
+                    await page.keyboard.type(fname, delay=100) # Human Typing
                 else:
-                    log_msg("❌ Name fields missing!", level="main"); await browser.close(); return "retry"
+                    log_msg("❌ First name text not found", level="main")
+                    await capture_step(page, "Err_Fname_Not_Found"); await browser.close(); return "retry"
+
+                await asyncio.sleep(1)
+
+                # --- SURNAME ---
+                log_msg(f"✍️ Surname: {lname}", level="step")
+                # Look for TEXT "Surname" or "Last name"
+                l_target = page.get_by_text("Surname", exact=False).or_(page.get_by_text("Last name", exact=False)).last
+                
+                if await l_target.count() > 0:
+                    await execute_click_strategy(page, l_target, 3, "Click_Surname_Text")
+                    await asyncio.sleep(0.5)
+                    await page.keyboard.type(lname, delay=100) # Human Typing
+                else:
+                    log_msg("❌ Surname text not found", level="main")
+                    await capture_step(page, "Err_Lname_Not_Found"); await browser.close(); return "retry"
+
+                await capture_step(page, "02_Names_Typed", wait_time=1)
+
+                # --- NEXT ---
+                if not await secure_step(
+                    page,
+                    lambda: page.get_by_role("button", name="Next"),
+                    lambda: page.get_by_text("birthday", exact=False).or_(page.get_by_text("date of birth", exact=False)),
+                    "Name_Next_Btn"
+                ): await browser.close(); return "retry"
 
                 # --- 3. DOB SELECTION ---
                 log_msg("📅 Setting DOB...", level="step")
+                await asyncio.sleep(3) # Wait for popup
+                
+                # Year Picker Logic
                 year_picker = page.locator("span").filter(has_text="202").first
                 if await year_picker.count() == 0: year_picker = page.get_by_text("202", exact=False).first
                 
@@ -367,6 +386,8 @@ async def run_fb_session(phone, proxy):
                 ): await browser.close(); return "retry"
 
                 # --- 4. GENDER ---
+                log_msg("⚧ Selecting Gender...", level="step")
+                await asyncio.sleep(3)
                 gender_opt = page.get_by_text("Male", exact=True).first
                 if await gender_opt.count() > 0: await execute_click_strategy(page, gender_opt, 3, "Male_Option")
                 
@@ -379,6 +400,7 @@ async def run_fb_session(phone, proxy):
 
                 # --- 5. MOBILE NUMBER ---
                 log_msg(f"📱 Input: {phone}", level="step")
+                await asyncio.sleep(3)
                 num_input = page.locator("input[type='tel']").or_(page.locator("input[name='reg_email__']"))
                 
                 if await num_input.count() > 0:
@@ -394,6 +416,7 @@ async def run_fb_session(phone, proxy):
 
                 # --- 6. PASSWORD ---
                 pwd = get_random_password()
+                await asyncio.sleep(3)
                 pwd_input = page.locator("input[type='password']")
                 if await pwd_input.count() > 0:
                     await pwd_input.fill(pwd)
@@ -405,6 +428,7 @@ async def run_fb_session(phone, proxy):
                     ): await browser.close(); return "retry"
 
                 # --- 7. SAVE INFO ---
+                await asyncio.sleep(3)
                 save_choice = page.get_by_text("Not now").or_(page.get_by_text("Save"))
                 await secure_step(
                     page,
@@ -414,6 +438,8 @@ async def run_fb_session(phone, proxy):
                 )
 
                 # --- 8. TERMS ---
+                log_msg("📜 Terms...", level="step")
+                await asyncio.sleep(3)
                 if not await secure_step(
                     page,
                     lambda: page.get_by_text("I agree", exact=True).or_(page.get_by_role("button", name="I agree")),
@@ -422,6 +448,7 @@ async def run_fb_session(phone, proxy):
                 ): await browser.close(); return "retry"
 
                 # --- 9. CONFIRMATION (SMS CHECK) ---
+                await asyncio.sleep(5)
                 if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
                     sms_opt = page.get_by_text("Send code via SMS", exact=False)
                     if await sms_opt.count() > 0:
