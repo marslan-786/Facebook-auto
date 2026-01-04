@@ -114,21 +114,12 @@ async def get_status():
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
-    
-    # 🔥 ACCURATE STATS FROM FILES 🔥
     stats = {
         "remaining": count_file_lines(NUMBERS_FILE),
         "success": count_file_lines(SUCCESS_FILE),
         "failed": count_file_lines(FAILED_FILE)
     }
-    
-    return JSONResponse({
-        "logs": logs[:50], 
-        "images": images, 
-        "running": BOT_RUNNING, 
-        "stats": stats, # Sending real stats
-        "current_proxy": p_disp
-    })
+    return JSONResponse({"logs": logs[:50], "images": images, "running": BOT_RUNNING, "stats": stats, "current_proxy": p_disp})
 
 @app.post("/update_settings")
 async def update_settings(country: str = Form(...), manual_proxy: Optional[str] = Form("")):
@@ -329,6 +320,7 @@ async def run_fb_session(phone, proxy):
                 # Cookies
                 cookie_btn = page.get_by_text("Allow all cookies", exact=False).or_(page.get_by_role("button", name="Allow all cookies"))
                 if await cookie_btn.count() > 0:
+                    log_msg("🍪 Cookies Found...", level="step")
                     await execute_click_strategy(page, cookie_btn.first, 1, "Cookies")
                     await asyncio.sleep(3)
 
@@ -425,7 +417,7 @@ async def run_fb_session(phone, proxy):
                 pwd = get_random_password()
                 await asyncio.sleep(2)
                 pwd_input = page.locator("input[type='password']")
-                if await pwd_input.count() == 0: await asyncio.sleep(3) # Retry wait
+                if await pwd_input.count() == 0: await asyncio.sleep(3) 
                 
                 if await pwd_input.count() > 0:
                     await pwd_input.fill(pwd)
@@ -448,17 +440,43 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # Terms (LAST I AGREE)
+                # --- 🔥 8. TERMS (SMART LOOP for LAST I AGREE) 🔥 ---
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
-                terms_btn = lambda: page.get_by_text("I agree", exact=True).last
-                next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False))
                 
-                if not await secure_step(page, terms_btn, next_page_check, "Terms_Agree_Btn"):
-                    log_msg("⚠️ I Agree click issue, observing...", level="step")
+                # Locator: Find ALL "I agree" texts, take the LAST one
+                terms_locator = page.get_by_text("I agree", exact=True).last 
+                
+                # Retry Loop for Click & Vanish
+                clicked_successfully = False
+                for attempt in range(3):
+                    if await terms_locator.count() > 0:
+                        log_msg(f"🖱️ Clicking I Agree (Attempt {attempt+1})...", level="step")
+                        
+                        # 1. Click
+                        await execute_click_strategy(page, terms_locator, 3, "I_Agree_Final")
+                        await asyncio.sleep(2)
+                        
+                        # 2. Check if button DISAPPEARED (Loading started)
+                        if await terms_locator.count() == 0:
+                            log_msg("✅ Button Disappeared! Loading (10s Wait)...", level="step")
+                            clicked_successfully = True
+                            await asyncio.sleep(10) # The requested 10s wait
+                            break
+                        else:
+                            log_msg("⚠️ Button still visible, retrying...", level="step")
+                    else:
+                        break # Button not found at all
+                
+                if not clicked_successfully:
+                    log_msg("❌ Failed to click 'I Agree' properly.", level="main")
+                    await capture_step(page, "Error_IAgree_Stuck")
+                    await browser.close(); return "retry"
 
-                # SMS/Confirmation Check
+                # --- 9. CONFIRMATION CHECK ---
                 log_msg("👀 Checking Success...", level="main")
+                
+                # SMS Select Check (Intermediate)
                 if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
                     sms_opt = page.get_by_text("Send code via SMS", exact=False)
                     if await sms_opt.count() > 0:
@@ -476,7 +494,7 @@ async def run_fb_session(phone, proxy):
                     await capture_step(page, "Success_Confirmation_Page", wait_time=0)
                     return "success"
                 
-                # Watch Mode (1 min)
+                # Watch Mode (Fallback)
                 log_msg("❓ Page Unclear. Watching...", level="main")
                 for i in range(12): 
                     if not BOT_RUNNING: break
