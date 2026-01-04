@@ -92,7 +92,7 @@ async def read_index(): return FileResponse('index.html')
 
 @app.get("/status")
 async def get_status():
-    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:20]
+    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:15]
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
@@ -196,7 +196,6 @@ async def execute_click_strategy(page, element, strategy_id, desc):
     except: return False
 
 async def secure_step(page, finder_func, success_check, step_name):
-    # Check if already done
     try:
         if await success_check().count() > 0: return True
     except: pass
@@ -262,7 +261,6 @@ async def master_loop():
 
 async def run_fb_session(phone, proxy):
     try:
-        # 🔥 COMPLETELY FRESH BROWSER FOR EVERY NUMBER 🔥
         async with async_playwright() as p:
             launch_args = {
                 "headless": True, 
@@ -278,7 +276,6 @@ async def run_fb_session(phone, proxy):
             pixel_5['viewport'] = {'width': 412, 'height': 950}
             pixel_5['has_touch'] = True 
             
-            # 🔥 EXPLICITLY CLEAR CONTEXT (Double Safety) 🔥
             context = await browser.new_context(**pixel_5, locale="en-US", ignore_https_errors=True)
             await context.clear_cookies()
             await context.clear_permissions()
@@ -420,42 +417,39 @@ async def run_fb_session(phone, proxy):
                     "Save_Info_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 8. TERMS (I AGREE) + 1 MINUTE OBSERVATION ---
+                # --- 8. TERMS (Standard Secure Step) ---
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
                 
-                terms_btn = page.get_by_role("button", name="I agree").or_(page.get_by_text("I agree", exact=True).last)
+                # Standard Robust Locator
+                terms_btn = lambda: page.get_by_role("button", name="I agree").or_(page.get_by_text("I agree", exact=True))
                 
-                if await terms_btn.count() > 0:
-                    # Capture Before
-                    await capture_step(page, "Terms_Btn_Found_Before_Click")
-                    
-                    # CLICK I AGREE
-                    await execute_click_strategy(page, terms_btn.first, 3, "I_Agree_Clicked")
-                    
-                    # 🔥 1-MINUTE OBSERVATION MODE 🔥
-                    log_msg("👀 Entering 1-Minute Watch Mode (Capturing every 5s)...", level="main")
-                    
-                    for i in range(12): # 12 * 5 = 60 Seconds
-                        if not BOT_RUNNING: break
-                        await asyncio.sleep(5)
-                        
-                        # Capture status
-                        await capture_step(page, f"Post_Agree_Watch_{i+1}", wait_time=0)
-                        
-                        # Optional: Check if code input appeared (Just for log, don't stop)
-                        if await page.locator("input[name='c']").count() > 0:
-                            log_msg(f"✅ Code Input Visible! (Watch Step {i+1})", level="main")
-                        elif await page.get_by_text("Enter the confirmation code").count() > 0:
-                            log_msg(f"✅ Confirmation Page! (Watch Step {i+1})", level="main")
-                    
-                    log_msg("🏁 Observation Ended.", level="main")
-                    return "success" # Marked as processed
+                # Success Check: Next page elements
+                next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False))
                 
-                else:
-                    log_msg("❌ I Agree Button Not Found", level="main")
-                    await capture_step(page, "Error_Terms_Missing")
-                    await browser.close(); return "retry"
+                # 🔥 EXECUTE SECURE STEP (5 Click Logics) 🔥
+                if not await secure_step(
+                    page,
+                    terms_btn,
+                    next_page_check,
+                    "Terms_Agree_Btn"
+                ):
+                    # Even if logic says failed (timeout), we still want to observe
+                    log_msg("⚠️ Standard checks timed out, forcing observation...", level="step")
+
+                # --- 9. 1-MINUTE OBSERVATION MODE ---
+                log_msg("👀 Entering 1-Minute Watch Mode...", level="main")
+                
+                for i in range(12): # 60 Seconds
+                    if not BOT_RUNNING: break
+                    await asyncio.sleep(5)
+                    await capture_step(page, f"Post_Agree_Watch_{i+1}", wait_time=0)
+                    
+                    if await page.locator("input[name='c']").count() > 0:
+                        log_msg(f"✅ Code Input Visible!", level="main")
+                
+                log_msg("🏁 Session Ended.", level="main")
+                return "success" 
 
             except Exception as e:
                 log_msg(f"❌ Session Error: {str(e)}", level="main"); await browser.close(); return "retry"
