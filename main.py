@@ -283,38 +283,37 @@ async def run_fb_session(phone, proxy):
                 await asyncio.sleep(5) 
                 await capture_step(page, "01_Loaded", wait_time=0)
 
-                # --- 0. HANDLE COOKIES (NEW LOGIC) ---
-                # Check for "Allow all cookies" OR "Decline optional cookies"
+                # --- 0. COOKIES ---
                 cookie_btn = page.get_by_text("Allow all cookies", exact=False).or_(page.get_by_role("button", name="Allow all cookies"))
-                decline_btn = page.get_by_text("Decline optional cookies", exact=False)
-
                 if await cookie_btn.count() > 0:
-                    log_msg("🍪 Accepting Cookies...", level="step")
-                    await execute_click_strategy(page, cookie_btn.first, 1, "Cookies_Allow")
-                    await asyncio.sleep(3)
-                elif await decline_btn.count() > 0:
-                    log_msg("🍪 Declining Cookies...", level="step")
-                    await execute_click_strategy(page, decline_btn.first, 1, "Cookies_Decline")
-                    await asyncio.sleep(3)
+                    log_msg("🍪 Allowing Cookies...", level="step")
+                    await execute_click_strategy(page, cookie_btn.first, 1, "Cookies")
+                    await asyncio.sleep(2)
 
-                # --- 1. CLICK CREATE ACCOUNT ---
+                # --- 1. CREATE ACCOUNT ---
                 if not await secure_step(
                     page, 
                     lambda: page.get_by_role("button", name="Create new account").or_(page.get_by_text("Create new account")), 
-                    lambda: page.get_by_text("What's your name?", exact=False).or_(page.get_by_text("First name", exact=False)), 
+                    lambda: page.get_by_text("First name", exact=False).or_(page.get_by_placeholder("First name")), 
                     "Create_Account_Btn"
                 ): await browser.close(); return "retry"
 
-                # --- 2. ENTER NAME ---
+                # --- 2. ENTER NAME (FIXED LOGIC) ---
                 fname, lname = get_random_name()
                 log_msg(f"✍️ Name: {fname} {lname}", level="step")
                 
-                f_input = page.locator("input[name='firstname']")
-                l_input = page.locator("input[name='lastname']")
+                # 🔥 ROBUST LOCATORS 🔥
+                # Tries Name attribute OR Placeholder OR Label OR Aria-Label
+                f_input = page.locator("input[name='firstname']").or_(page.get_by_placeholder("First name")).or_(page.get_by_label("First name")).or_(page.locator("input[aria-label='First name']"))
+                l_input = page.locator("input[name='lastname']").or_(page.get_by_placeholder("Last name")).or_(page.get_by_label("Surname")).or_(page.locator("input[aria-label='Surname']"))
                 
+                # Wait for field to appear (Crucial)
+                try: await f_input.first.wait_for(state="visible", timeout=10000)
+                except: pass
+
                 if await f_input.count() > 0:
-                    await f_input.fill(fname)
-                    await l_input.fill(lname)
+                    await f_input.first.fill(fname)
+                    await l_input.first.fill(lname)
                     await capture_step(page, "02_NameFilled", wait_time=0)
                     
                     if not await secure_step(
@@ -324,11 +323,12 @@ async def run_fb_session(phone, proxy):
                         "Name_Next_Btn"
                     ): await browser.close(); return "retry"
                 else:
-                    log_msg("❌ Name fields not found", level="main"); await browser.close(); return "retry"
+                    log_msg("❌ Name fields missing!", level="main")
+                    await capture_step(page, "Error_Name_Missing", wait_time=0)
+                    await browser.close(); return "retry"
 
                 # --- 3. DOB SELECTION ---
                 log_msg("📅 Setting DOB...", level="step")
-                
                 year_picker = page.locator("span").filter(has_text="202").first
                 if await year_picker.count() == 0: year_picker = page.get_by_text("202", exact=False).first
                 
