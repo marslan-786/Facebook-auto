@@ -108,18 +108,52 @@ def get_current_proxy():
 @app.get("/")
 async def read_index(): return FileResponse('index.html')
 
+@app.get("/download/{file_type}")
+async def download_file(file_type: str):
+    target_file = None
+    if file_type == "numbers": target_file = NUMBERS_FILE
+    elif file_type == "success": target_file = SUCCESS_FILE
+    elif file_type == "failed": target_file = FAILED_FILE
+    
+    if target_file and os.path.exists(target_file):
+        return FileResponse(target_file, filename=target_file, media_type='text/plain')
+    return {"error": "File not found"}
+
+@app.post("/clear_all")
+async def clear_all_data():
+    global logs
+    logs = []
+    # Clear Numbers File
+    open(NUMBERS_FILE, 'w').close()
+    log_msg("🗑️ System Cleared (Logs & Numbers).", level="main")
+    return {"status": "cleared"}
+
+@app.post("/clear_proxies")
+async def clear_proxies_api():
+    SETTINGS["proxy_manual"] = ""
+    open(PROXY_FILE, 'w').close()
+    return {"status": "proxies_cleared"}
+
 @app.get("/status")
 async def get_status():
     files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:15]
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
+    
     stats = {
         "remaining": count_file_lines(NUMBERS_FILE),
         "success": count_file_lines(SUCCESS_FILE),
         "failed": count_file_lines(FAILED_FILE)
     }
-    return JSONResponse({"logs": logs[:50], "images": images, "running": BOT_RUNNING, "stats": stats, "current_proxy": p_disp})
+    
+    return JSONResponse({
+        "logs": logs[:50], 
+        "images": images, 
+        "running": BOT_RUNNING, 
+        "stats": stats, 
+        "current_proxy": p_disp
+    })
 
 @app.post("/update_settings")
 async def update_settings(country: str = Form(...), manual_proxy: Optional[str] = Form("")):
@@ -461,30 +495,38 @@ async def run_fb_session(phone, proxy):
                 if not await secure_step(page, terms_btn, next_page_check, "Terms_Agree_Btn"):
                     log_msg("⚠️ I Agree click timed out, observing...", level="step")
 
-                # --- 9. CONFIRMATION CHECK (WITH RESEND SMS) ---
+                # --- 9. CONFIRMATION / HUMAN CHECK / CAPTCHA ---
                 log_msg("👀 Checking Success...", level="main")
                 
-                # Check for "Enter confirmation code" page
+                # Check SMS Option First
+                if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
+                    sms_opt = page.get_by_text("Send code via SMS", exact=False)
+                    if await sms_opt.count() > 0:
+                        await execute_click_strategy(page, sms_opt, 3, "Select_SMS")
+                        await asyncio.sleep(2)
+                    await secure_step(
+                        page,
+                        lambda: page.get_by_role("button", name="Continue").or_(page.get_by_role("button", name="Send code")),
+                        lambda: page.get_by_text("Enter the confirmation code", exact=False),
+                        "Send_Code_Btn"
+                    )
+
+                # Check 2: Success
                 if await page.get_by_text("Enter the confirmation code", exact=False).count() > 0:
                     log_msg("✅ Page Reached. Waiting 60s for RESEND SMS...", level="main")
                     await capture_step(page, "Success_Page_Initial_Wait")
-                    
-                    # 🔥 WAIT 60 SECONDS 🔥
                     await asyncio.sleep(60)
                     
-                    # 🔥 TRIGGER RESEND 🔥
                     resend_btn = page.get_by_text("I didn't get the code", exact=False)
                     if await resend_btn.count() > 0:
                         await execute_click_strategy(page, resend_btn.first, 3, "Click_Resend_Menu")
                         await asyncio.sleep(3)
                         
-                        # Click "Send via SMS"
                         sms_opt = page.get_by_text("Send code via SMS", exact=False).or_(page.get_by_text("SMS", exact=False))
                         if await sms_opt.count() > 0:
                             await execute_click_strategy(page, sms_opt.first, 3, "Click_Send_SMS_Option")
                             await asyncio.sleep(3)
                             
-                            # Click Continue if pop-up exists
                             cont_sms = page.get_by_role("button", name="Continue").or_(page.get_by_text("Continue"))
                             if await cont_sms.count() > 0:
                                 await execute_click_strategy(page, cont_sms.first, 1, "Confirm_SMS_Resend")
@@ -492,7 +534,7 @@ async def run_fb_session(phone, proxy):
                     log_msg("🎉 SMS Resend Triggered! Job Done.", level="main")
                     await capture_step(page, "Success_Resend_Done")
                     return "success"
-
+                
                 # Human Verification Check (Blue Page)
                 if await page.get_by_text("Confirm you're human", exact=False).count() > 0:
                     log_msg("🤖 Human Check (Blue Page)... Clicking Continue.", level="main")

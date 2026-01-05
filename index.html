@@ -14,12 +14,14 @@
         .icon-btn:hover { color: var(--accent); }
         .container { display: flex; flex-direction: column; padding: 20px; gap: 20px; height: calc(100vh - 80px); }
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
-        .stat-box { background: var(--panel); padding: 15px; border-radius: 10px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border-top: 3px solid transparent; }
+        .stat-box { background: var(--panel); padding: 15px; border-radius: 10px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border-top: 3px solid transparent; position: relative; }
         .stat-box h3 { margin: 0; font-size: 12px; color: #94a3b8; font-weight: normal; }
         .stat-box .count { font-size: 24px; font-weight: bold; margin-top: 5px; }
         .stat-total { border-color: var(--accent); }
         .stat-success { border-color: var(--green); }
         .stat-failed { border-color: var(--red); }
+        .btn-download-sm { position: absolute; bottom: 5px; right: 5px; background: none; border: none; color: #64748b; cursor: pointer; font-size: 14px; transition: 0.2s; }
+        .btn-download-sm:hover { color: var(--text); transform: scale(1.1); }
         .card { background: var(--panel); padding: 20px; border-radius: 10px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-size: 12px; color: #94a3b8; }
@@ -51,6 +53,7 @@
 </head>
 <body>
     <div id="toast">Error Message</div>
+    
     <div id="settingsModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -73,27 +76,43 @@
             </div>
             <div class="modal-actions">
                 <button class="btn-save" onclick="saveSettings()">Save Configuration</button>
-                <button class="btn-clear" onclick="clearProxyInput()">Clear Proxy</button>
+                <button class="btn-clear" onclick="clearProxyData()">Clear Proxy</button>
             </div>
         </div>
     </div>
+
     <div id="galleryModal" class="modal">
         <div class="modal-content" style="max-width: 900px;">
             <div class="modal-header"><h3>📸 Live Debug Gallery</h3><button class="icon-btn" onclick="toggleModal('galleryModal')"><i class="fas fa-times"></i></button></div>
             <div class="gallery-grid" id="galleryGrid"></div>
         </div>
     </div>
+
     <div class="header">
         <button class="icon-btn" onclick="openGallery()"><i class="fas fa-images"></i></button>
         <h2>FACEBOOK BOT</h2>
         <button class="icon-btn" onclick="toggleModal('settingsModal')"><i class="fas fa-cog"></i></button>
     </div>
+
     <div class="container">
         <div class="stats-grid">
-            <div class="stat-box stat-total"><h3>Remaining</h3><div class="count" id="countTotal">0</div></div>
-            <div class="stat-box stat-success"><h3>Success</h3><div class="count" id="countSuccess">0</div></div>
-            <div class="stat-box stat-failed"><h3>Failed</h3><div class="count" id="countFailed">0</div></div>
+            <div class="stat-box stat-total">
+                <h3>Remaining</h3>
+                <div class="count" id="countTotal">0</div>
+                <button class="btn-download-sm" onclick="downloadFile('numbers')" title="Download Remaining"><i class="fas fa-download"></i></button>
+            </div>
+            <div class="stat-box stat-success">
+                <h3>Success</h3>
+                <div class="count" id="countSuccess">0</div>
+                <button class="btn-download-sm" onclick="downloadFile('success')" title="Download Success"><i class="fas fa-download"></i></button>
+            </div>
+            <div class="stat-box stat-failed">
+                <h3>Failed</h3>
+                <div class="count" id="countFailed">0</div>
+                <button class="btn-download-sm" onclick="downloadFile('failed')" title="Download Failed"><i class="fas fa-download"></i></button>
+            </div>
         </div>
+
         <div class="card">
             <div class="form-group" style="margin-bottom:0;">
                 <div class="upload-box" onclick="document.getElementById('numFile').click()">
@@ -103,11 +122,12 @@
             </div>
             <div class="btn-row">
                 <button id="mainBtn" class="btn-control start" onclick="toggleBot()">START</button>
-                <button class="btn-control clear-data" onclick="clearLocalData()"><i class="fas fa-trash"></i> CLEAR</button>
+                <button class="btn-control clear-data" onclick="clearAllData()"><i class="fas fa-trash"></i> CLEAR</button>
             </div>
         </div>
         <div class="terminal" id="terminal"><div>> System Ready.</div></div>
     </div>
+
     <script>
         let userScrolledUp = false;
         window.onload = function() {
@@ -119,20 +139,46 @@
                 else userScrolledUp = false;
             });
         };
+        
         function showToast(msg) {
             const x = document.getElementById("toast");
             x.innerText = msg; x.className = "show";
             setTimeout(function(){ x.className = x.className.replace("show", ""); }, 3000);
         }
+        
         function toggleModal(id) {
             const m = document.getElementById(id);
             m.style.display = m.style.display === 'flex' ? 'none' : 'flex';
         }
+        
         function toggleProxyHelp() {
             const h = document.getElementById('proxyHelp');
             h.style.display = h.style.display === 'block' ? 'none' : 'block';
         }
-        function clearProxyInput() { document.getElementById('manualProxy').value = ""; }
+
+        // --- DOWNLOAD LOGIC ---
+        function downloadFile(type) {
+            window.location.href = `/download/${type}`;
+        }
+
+        // --- CLEAR PROXY ---
+        async function clearProxyData() {
+            if(!confirm("Clear ALL proxy data (file & input)?")) return;
+            document.getElementById('manualProxy').value = "";
+            localStorage.removeItem('manualProxy');
+            await fetch('/clear_proxies', { method: 'POST' });
+            showToast("Proxies Cleared!");
+        }
+
+        // --- CLEAR ALL DATA ---
+        async function clearAllData() {
+            if(!confirm("⚠️ RESET ALL? This will clear logs AND the uploaded numbers list.")) return;
+            await fetch('/clear_all', { method: 'POST' });
+            document.getElementById('terminal').innerHTML = "<div>> System Reset.</div>";
+            document.getElementById('countTotal').innerText = "0";
+            showToast("System Reset Complete");
+        }
+
         async function uploadFile(inputId, endpoint, labelId) {
             const fileInput = document.getElementById(inputId);
             const file = fileInput.files[0];
@@ -145,6 +191,7 @@
                 document.getElementById(labelId).innerText = "✅ " + file.name;
             } catch(e) { showToast("Upload Failed!"); }
         }
+
         async function saveSettings() {
             const proxy = document.getElementById('manualProxy').value;
             localStorage.setItem('manualProxy', proxy);
@@ -154,6 +201,7 @@
             await fetch('/update_settings', { method: 'POST', body: formData });
             document.getElementById('settingsModal').style.display = 'none';
         }
+
         let isRunning = false;
         async function toggleBot() {
             const btn = document.getElementById('mainBtn');
@@ -165,23 +213,22 @@
                 btn.innerText = "START"; btn.classList.remove('stop'); btn.classList.add('start'); isRunning = false;
             }
         }
+
         async function openGallery() { toggleModal('galleryModal'); }
-        async function clearLocalData() {
-            if(!confirm("Reset stats display?")) return;
-            document.getElementById('terminal').innerHTML = "<div>> Log Cleared.</div>";
-        }
+
         async function pollStatus() {
             try {
                 const res = await fetch('/status');
                 const data = await res.json();
                 
-                // 🔥 REAL STATS FROM PYTHON FILE COUNTS 🔥
+                // Stats
                 if(data.stats) {
                     document.getElementById('countSuccess').innerText = data.stats.success;
                     document.getElementById('countFailed').innerText = data.stats.failed;
                     document.getElementById('countTotal').innerText = data.stats.remaining;
                 }
 
+                // Logs
                 const term = document.getElementById('terminal');
                 const chronoLogs = [...data.logs].reverse(); 
                 const newHTML = chronoLogs.map(l => `<div>${l}</div>`).join('');
@@ -190,12 +237,14 @@
                     if (!userScrolledUp) term.scrollTop = term.scrollHeight; 
                 }
 
+                // Btn State
                 const btn = document.getElementById('mainBtn');
                 if (data.running && !isRunning) {
                     isRunning = true; btn.innerText = "STOP";
                     btn.classList.remove('start'); btn.classList.add('stop');
                 }
 
+                // Gallery
                 if(document.getElementById('galleryModal').style.display === 'flex') {
                     const grid = document.getElementById('galleryGrid');
                     if (data.images.length === 0) grid.innerHTML = "<p style='color:#888;text-align:center;'>No images.</p>";
