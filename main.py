@@ -123,7 +123,6 @@ async def download_file(file_type: str):
 async def clear_all_data():
     global logs
     logs = []
-    # Clear Numbers File
     open(NUMBERS_FILE, 'w').close()
     log_msg("🗑️ System Cleared (Logs & Numbers).", level="main")
     return {"status": "cleared"}
@@ -136,24 +135,16 @@ async def clear_proxies_api():
 
 @app.get("/status")
 async def get_status():
-    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:15]
+    files = sorted(glob.glob(f'{CAPTURE_DIR}/*.jpg'), key=os.path.getmtime, reverse=True)[:20]
     images = [f"/captures/{os.path.basename(f)}" for f in files]
     prox = get_current_proxy()
     p_disp = prox['server'] if prox else "🌐 Direct Internet"
-    
     stats = {
         "remaining": count_file_lines(NUMBERS_FILE),
         "success": count_file_lines(SUCCESS_FILE),
         "failed": count_file_lines(FAILED_FILE)
     }
-    
-    return JSONResponse({
-        "logs": logs[:50], 
-        "images": images, 
-        "running": BOT_RUNNING, 
-        "stats": stats, 
-        "current_proxy": p_disp
-    })
+    return JSONResponse({"logs": logs[:50], "images": images, "running": BOT_RUNNING, "stats": stats, "current_proxy": p_disp})
 
 @app.post("/update_settings")
 async def update_settings(country: str = Form(...), manual_proxy: Optional[str] = Form("")):
@@ -488,30 +479,15 @@ async def run_fb_session(phone, proxy):
                 # Terms (LAST I AGREE)
                 log_msg("📜 Terms (I Agree)...", level="step")
                 await asyncio.sleep(3)
-                
                 terms_btn = lambda: page.get_by_text("I agree", exact=True)
                 next_page_check = lambda: page.get_by_text("confirmation code", exact=False).or_(page.get_by_text("Send code via", exact=False)).or_(page.get_by_text("Confirm you're human", exact=False))
                 
                 if not await secure_step(page, terms_btn, next_page_check, "Terms_Agree_Btn"):
                     log_msg("⚠️ I Agree click timed out, observing...", level="step")
 
-                # --- 9. CONFIRMATION / HUMAN CHECK / CAPTCHA ---
+                # --- 9. CONFIRMATION CHECK (WITH RESEND PROOF) ---
                 log_msg("👀 Checking Success...", level="main")
                 
-                # Check SMS Option First
-                if await page.get_by_text("Send code via WhatsApp", exact=False).count() > 0:
-                    sms_opt = page.get_by_text("Send code via SMS", exact=False)
-                    if await sms_opt.count() > 0:
-                        await execute_click_strategy(page, sms_opt, 3, "Select_SMS")
-                        await asyncio.sleep(2)
-                    await secure_step(
-                        page,
-                        lambda: page.get_by_role("button", name="Continue").or_(page.get_by_role("button", name="Send code")),
-                        lambda: page.get_by_text("Enter the confirmation code", exact=False),
-                        "Send_Code_Btn"
-                    )
-
-                # Check 2: Success
                 if await page.get_by_text("Enter the confirmation code", exact=False).count() > 0:
                     log_msg("✅ Page Reached. Waiting 60s for RESEND SMS...", level="main")
                     await capture_step(page, "Success_Page_Initial_Wait")
@@ -519,36 +495,43 @@ async def run_fb_session(phone, proxy):
                     
                     resend_btn = page.get_by_text("I didn't get the code", exact=False)
                     if await resend_btn.count() > 0:
+                        # 🔥 1. PROOF: RESEND BTN 🔥
+                        await capture_step(page, "1_Resend_Click_Proof")
                         await execute_click_strategy(page, resend_btn.first, 3, "Click_Resend_Menu")
                         await asyncio.sleep(3)
                         
                         sms_opt = page.get_by_text("Send code via SMS", exact=False).or_(page.get_by_text("SMS", exact=False))
                         if await sms_opt.count() > 0:
+                            # 🔥 2. PROOF: SMS OPTION 🔥
+                            await capture_step(page, "2_SMS_Select_Proof")
                             await execute_click_strategy(page, sms_opt.first, 3, "Click_Send_SMS_Option")
-                            await asyncio.sleep(3)
+                            await asyncio.sleep(2)
                             
+                            # Handle Continue Popup if exists
                             cont_sms = page.get_by_role("button", name="Continue").or_(page.get_by_text("Continue"))
                             if await cont_sms.count() > 0:
                                 await execute_click_strategy(page, cont_sms.first, 1, "Confirm_SMS_Resend")
                     
-                    log_msg("🎉 SMS Resend Triggered! Job Done.", level="main")
-                    await capture_step(page, "Success_Resend_Done")
+                    # 🔥 3. PROOF: FINAL TOAST 🔥
+                    await asyncio.sleep(2)
+                    log_msg("🎉 SMS Resend Triggered! Capturing Toast...", level="main")
+                    await capture_step(page, "3_Resend_Success_Proof")
                     return "success"
-                
-                # Human Verification Check (Blue Page)
+
+                # Human Verification
                 if await page.get_by_text("Confirm you're human", exact=False).count() > 0:
                     log_msg("🤖 Human Check (Blue Page)... Clicking Continue.", level="main")
                     cont_btn = page.get_by_role("button", name="Continue").or_(page.get_by_text("Continue", exact=True))
                     await execute_click_strategy(page, cont_btn.first, 1, "Human_Continue")
                     await asyncio.sleep(8) 
 
-                # 🛑 CAPTCHA WALL DETECTION
+                # CAPTCHA WALL
                 if await page.locator("input[name='captcha_response']").count() > 0 or await page.get_by_text("Enter the code below", exact=False).count() > 0:
                     log_msg("🚫 CAPTCHA WALL! Hard Fail. Skipping number.", level="main")
                     await capture_step(page, "CAPTCHA_FAIL")
                     return "captcha_skip" 
 
-                # Watch Mode (Fallback)
+                # Watch Mode
                 log_msg("❓ Page Unclear. Watching...", level="main")
                 for i in range(12): 
                     if not BOT_RUNNING: break
