@@ -114,7 +114,6 @@ async def download_file(file_type: str):
     if file_type == "numbers": target_file = NUMBERS_FILE
     elif file_type == "success": target_file = SUCCESS_FILE
     elif file_type == "failed": target_file = FAILED_FILE
-    
     if target_file and os.path.exists(target_file):
         return FileResponse(target_file, filename=target_file, media_type='text/plain')
     return {"error": "File not found"}
@@ -124,7 +123,7 @@ async def clear_all_data():
     global logs
     logs = []
     open(NUMBERS_FILE, 'w').close()
-    log_msg("🗑️ System Cleared (Logs & Numbers).", level="main")
+    log_msg("🗑️ System Cleared.", level="main")
     return {"status": "cleared"}
 
 @app.post("/clear_proxies")
@@ -219,6 +218,7 @@ async def execute_click_strategy(page, element, strategy_id, desc):
         if strategy_id in [1, 3, 4, 5]:
             target_x, target_y = (rx, ry) if strategy_id == 4 else (cx, cy)
             await show_red_dot(page, target_x, target_y)
+            # Capture the visual proof of where we are clicking
             await capture_step(page, f"Target_Viz_{desc}", wait_time=0.2)
 
         if strategy_id == 1:
@@ -485,37 +485,44 @@ async def run_fb_session(phone, proxy):
                 if not await secure_step(page, terms_btn, next_page_check, "Terms_Agree_Btn"):
                     log_msg("⚠️ I Agree click timed out, observing...", level="step")
 
-                # --- 9. CONFIRMATION CHECK (WITH RESEND PROOF) ---
+                # --- 9. CONFIRMATION CHECK (STRICT RESEND LOGIC) ---
                 log_msg("👀 Checking Success...", level="main")
                 
+                # Check for "Enter confirmation code" page
                 if await page.get_by_text("Enter the confirmation code", exact=False).count() > 0:
                     log_msg("✅ Page Reached. Waiting 60s for RESEND SMS...", level="main")
                     await capture_step(page, "Success_Page_Initial_Wait")
                     await asyncio.sleep(60)
                     
-                    resend_btn = page.get_by_text("I didn't get the code", exact=False)
+                    # 🔥 1. FIND RESEND BUTTON 🔥
+                    resend_btn = page.get_by_text("I didn't receive the code", exact=False).or_(page.get_by_text("I didn't get the code", exact=False))
                     if await resend_btn.count() > 0:
-                        # 🔥 1. PROOF: RESEND BTN 🔥
-                        await capture_step(page, "1_Resend_Click_Proof")
+                        await capture_step(page, "1_Found_Resend_Btn") # Evidence
                         await execute_click_strategy(page, resend_btn.first, 3, "Click_Resend_Menu")
                         await asyncio.sleep(3)
+                    else:
+                        log_msg("❌ 'I didn't get code' button NOT found.", level="main")
+                        await capture_step(page, "Error_No_Resend_Btn")
+                        return "retry" # FAIL
+
+                    # 🔥 2. FIND SMS OPTION 🔥
+                    sms_opt = page.get_by_text("Send code via SMS", exact=False).or_(page.get_by_text("SMS", exact=False))
+                    if await sms_opt.count() > 0:
+                        await capture_step(page, "2_Found_SMS_Option") # Evidence
+                        await execute_click_strategy(page, sms_opt.first, 3, "Click_Send_SMS_Option")
+                        await asyncio.sleep(3)
                         
-                        sms_opt = page.get_by_text("Send code via SMS", exact=False).or_(page.get_by_text("SMS", exact=False))
-                        if await sms_opt.count() > 0:
-                            # 🔥 2. PROOF: SMS OPTION 🔥
-                            await capture_step(page, "2_SMS_Select_Proof")
-                            await execute_click_strategy(page, sms_opt.first, 3, "Click_Send_SMS_Option")
-                            await asyncio.sleep(2)
-                            
-                            # Handle Continue Popup if exists
-                            cont_sms = page.get_by_role("button", name="Continue").or_(page.get_by_text("Continue"))
-                            if await cont_sms.count() > 0:
-                                await execute_click_strategy(page, cont_sms.first, 1, "Confirm_SMS_Resend")
+                        cont_sms = page.get_by_role("button", name="Continue").or_(page.get_by_text("Continue"))
+                        if await cont_sms.count() > 0:
+                            await execute_click_strategy(page, cont_sms.first, 1, "Confirm_SMS_Resend")
+                    else:
+                        log_msg("❌ 'Send via SMS' option NOT found.", level="main")
+                        await capture_step(page, "Error_No_SMS_Option")
+                        return "retry" # FAIL
                     
-                    # 🔥 3. PROOF: FINAL TOAST 🔥
-                    await asyncio.sleep(2)
-                    log_msg("🎉 SMS Resend Triggered! Capturing Toast...", level="main")
-                    await capture_step(page, "3_Resend_Success_Proof")
+                    # 🔥 3. SUCCESS 🔥
+                    log_msg("🎉 SMS Resend Triggered! Job Done.", level="main")
+                    await capture_step(page, "3_Resend_Done_Toast")
                     return "success"
 
                 # Human Verification
