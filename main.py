@@ -218,7 +218,6 @@ async def execute_click_strategy(page, element, strategy_id, desc):
         if strategy_id in [1, 3, 4, 5]:
             target_x, target_y = (rx, ry) if strategy_id == 4 else (cx, cy)
             await show_red_dot(page, target_x, target_y)
-            # Capture the visual proof of where we are clicking
             await capture_step(page, f"Target_Viz_{desc}", wait_time=0.2)
 
         if strategy_id == 1:
@@ -494,8 +493,9 @@ async def run_fb_session(phone, proxy):
                     await capture_step(page, "Success_Page_Initial_Wait")
                     await asyncio.sleep(60)
                     
-                    # 🔥 1. FIND RESEND BUTTON 🔥
+                    # 🔥 1. FIND RESEND BUTTON (ROBUST LOCATOR) 🔥
                     resend_btn = page.get_by_text("I didn't receive the code", exact=False).or_(page.get_by_text("I didn't get the code", exact=False))
+                    
                     if await resend_btn.count() > 0:
                         await capture_step(page, "1_Found_Resend_Btn") # Evidence
                         await execute_click_strategy(page, resend_btn.first, 3, "Click_Resend_Menu")
