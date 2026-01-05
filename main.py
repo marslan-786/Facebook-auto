@@ -494,7 +494,7 @@ async def run_fb_session(phone, proxy):
                     await asyncio.sleep(60)
                     
                     # 🔥 1. FIND RESEND BUTTON (ROBUST LOCATOR) 🔥
-                    resend_btn = page.get_by_text("I didn't receive the code", exact=False).or_(page.get_by_text("I didn't get the code", exact=False))
+                    resend_btn = page.get_by_text("the code", exact=False).or_(page.get_by_text("get the code", exact=False))
                     
                     if await resend_btn.count() > 0:
                         await capture_step(page, "1_Found_Resend_Btn") # Evidence
